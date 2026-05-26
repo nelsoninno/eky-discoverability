@@ -1,67 +1,44 @@
 /* =====================================================================
-   EVERYBODY KNOWS YOU — AI Discoverability backend  v2
-   (Cloudflare Pages Function — drop at /functions/api/score.js)
+   EVERYBODY KNOWS YOU — AI Discoverability backend  v3 (split modes)
    ---------------------------------------------------------------------
-   Two-stage flow, one endpoint:
-     1) DISCOVER  — user typed a NAME. We ask Serper, identify candidate
-                    owned site (skipping LinkedIn/Wikipedia/etc.), list
-                    the profiles AI sees, and compute Layer A (Presence
-                    & identity). Returns stage="needs_confirmation".
-     2) AUDIT     — user confirmed a URL (or pasted one). We fetch the
-                    site, compute Layer B (Your own hub) including the
-                    sameAs CROSS-VERIFICATION against the profiles AI
-                    found, and return the final 0-100 score.
-     2b) NO_SITE  — user said "I don't have a website yet". We return
-                    Layer A only, score capped at 45.
+   THREE explicit modes:
 
-   ENV (Cloudflare Pages > Settings > Variables and secrets):
-     SERPER_API_KEY   (Secret) — required for NAME search.
-                       URL-paste audits work without it.
-     ALLOWED_ORIGIN   (Variable) — e.g. "https://everybodyknowsyou.com".
-                       Defaults to "*".
+     1) url_audit      — user pasted a URL. Pure 100-pt website-quality audit.
+                          No Serper call. No identity layer. Just the site.
+     2) discover       — user typed a name. Asks Serper, builds candidate +
+                          profile list, computes Layer A preview.
+                          Returns stage:"needs_confirmation".
+     3) identity_audit — user confirmed a URL after discover.
+                          Layer A (40) + Layer B (60) = 100,
+                          with sameAs CROSS-VERIFICATION.
+     3b) no_site       — user said "I don't have a website yet".
+                          Layer A only, cap 40.
+
+   Knowledge Panel signal removed (per product decision).
+   computeLayerB and computeWebsiteAudit are intentionally regex-free
+   (Cloudflare bundler bug with quote-mixed regex char classes).
    ===================================================================== */
 
-/* ---------- profile platforms (these are NOT candidate "owned" sites) ---------- */
 const PLATFORMS = {
-  linkedin:   ["linkedin.com"],
-  wikipedia:  ["wikipedia.org"],
-  wikidata:   ["wikidata.org"],
-  twitter:    ["twitter.com", "x.com"],
-  instagram:  ["instagram.com"],
-  facebook:   ["facebook.com", "fb.com"],
-  youtube:    ["youtube.com", "youtu.be"],
-  tiktok:     ["tiktok.com"],
-  threads:    ["threads.net"],
-  github:     ["github.com"],
-  imdb:       ["imdb.com"],
-  crunchbase: ["crunchbase.com"],
-  spotify:    ["spotify.com"],
-  medium:     ["medium.com"],
-  substack:   ["substack.com"],
-  behance:    ["behance.net"],
-  dribbble:   ["dribbble.com"],
-  patreon:    ["patreon.com"],
-  pinterest:  ["pinterest.com"],
-  reddit:     ["reddit.com"],
-  quora:      ["quora.com"],
-  goodreads:  ["goodreads.com"],
-  vimeo:      ["vimeo.com"],
-  soundcloud: ["soundcloud.com"],
-  aboutme:    ["about.me"],
-  linktree:   ["linktr.ee", "beacons.ai", "bio.link"]
+  linkedin:["linkedin.com"], wikipedia:["wikipedia.org"], wikidata:["wikidata.org"],
+  twitter:["twitter.com","x.com"], instagram:["instagram.com"],
+  facebook:["facebook.com","fb.com"], youtube:["youtube.com","youtu.be"],
+  tiktok:["tiktok.com"], threads:["threads.net"], github:["github.com"],
+  imdb:["imdb.com"], crunchbase:["crunchbase.com"], spotify:["spotify.com"],
+  medium:["medium.com"], substack:["substack.com"], behance:["behance.net"],
+  dribbble:["dribbble.com"], patreon:["patreon.com"], pinterest:["pinterest.com"],
+  reddit:["reddit.com"], quora:["quora.com"], goodreads:["goodreads.com"],
+  vimeo:["vimeo.com"], soundcloud:["soundcloud.com"], aboutme:["about.me"],
+  linktree:["linktr.ee","beacons.ai","bio.link"]
 };
-
-/* News/PR sites that should never be picked as someone's "own" site */
 const NEWS_PR = [
   "bloomberg.com","forbes.com","businesswire.com","prnewswire.com",
   "reuters.com","techcrunch.com","nytimes.com","theverge.com","wsj.com",
   "ft.com","yahoo.com","businessinsider.com","cnbc.com","bbc.com",
   "cnn.com","wired.com","gizmodo.com","mashable.com","fastcompany.com"
 ];
-
 const FETCH_TIMEOUT = 8000;
 
-/* ---------- entrypoints ---------- */
 export async function onRequestOptions(context) {
   return new Response(null, { status: 204, headers: cors(context) });
 }
@@ -76,7 +53,6 @@ export async function onRequestPost(context) {
     return new Response(JSON.stringify({ error: "Something went wrong. Please try again." }), { status: 200, headers });
   }
 }
-
 function cors(context) {
   const allow = (context.env && context.env.ALLOWED_ORIGIN) || "*";
   return {
@@ -87,9 +63,6 @@ function cors(context) {
   };
 }
 
-/* =====================================================================
-   ROUTER  —  decides DISCOVER vs AUDIT vs NO_SITE based on the payload.
-   ===================================================================== */
 async function handle(body, env) {
   const query = (body && body.query ? String(body.query) : "").trim();
   const country = body && body.country ? String(body.country) : "";
@@ -101,346 +74,271 @@ async function handle(body, env) {
 
   if (!query && !confirmedUrl) return { error: "Please type your name, business, or website." };
 
-  // Auto-decide mode if not given
   let mode = explicitMode;
   if (!mode) {
-    if (confirmedUrl) mode = "audit";
-    else if (looksLikeUrl(query)) mode = "audit";
+    if (confirmedUrl) mode = "identity_audit";
+    else if (looksLikeUrl(query)) mode = "url_audit";
     else mode = "discover";
   }
+  // Back-compat: older front-end may still send mode:"audit"
+  if (mode === "audit") mode = "identity_audit";
 
-  if (mode === "no_site") {
-    return await modeNoSite({ query, country, countryName, passedProfiles, passedMatches }, env);
-  }
-  if (mode === "audit") {
+  if (mode === "url_audit") return await modeWebsiteAudit({ url: query }, env);
+  if (mode === "no_site")  return await modeNoSite({ query, country, countryName, passedProfiles, passedMatches }, env);
+  if (mode === "identity_audit") {
     const url = confirmedUrl || query;
-    return await modeAudit({ url, name: query, country, countryName, passedProfiles, passedMatches }, env);
+    return await modeIdentityAudit({ url, name: query, country, countryName, passedProfiles, passedMatches }, env);
   }
   return await modeDiscover({ query, country, countryName }, env);
 }
 
-/* =====================================================================
-   MODE: DISCOVER  —  ask Serper, find candidate + profiles, score Layer A
-   ===================================================================== */
-async function modeDiscover({ query, country, countryName }, env) {
-  if (!env.SERPER_API_KEY) {
-    return {
-      stage: "needs_confirmation",
-      candidate: null,
-      profiles: [],
-      matches: 1,
-      layerA: emptyLayerA("Name search is not enabled (no Serper key configured)."),
-      layerATotal: 0
-    };
-  }
-
-  const search = await serper(query, country, env);
-  if (!search.ok) {
-    return {
-      stage: "needs_confirmation",
-      candidate: null,
-      profiles: [],
-      matches: 1,
-      layerA: emptyLayerA("Search is temporarily unavailable. Paste your URL instead."),
-      layerATotal: 0
-    };
-  }
-
-  const profiles = extractProfiles(search.data, query);
-  const candidate = pickCandidate(search.data);
-  const matches = estimateMatches(search.data, query);
-  const hasKnowledgeGraph = !!(search.data.knowledgeGraph && (search.data.knowledgeGraph.title || search.data.knowledgeGraph.description));
-
-  const layerA = computeLayerA({ hasKnowledgeGraph, profiles, matches });
-
-  return {
-    stage: "needs_confirmation",
-    candidate,                 // {url,title,snippet,source} | null
-    profiles,                  // [{platform,url,title}]
-    matches,
-    layerA: layerA.bySignal,
-    layerATotal: layerA.total
-  };
-}
-
-/* =====================================================================
-   MODE: NO_SITE  —  user said they have no site. Layer A only, cap 45.
-   ===================================================================== */
-async function modeNoSite({ query, country, countryName, passedProfiles, passedMatches }, env) {
-  // Reuse passed profiles if we have them; else search again.
-  let profiles = passedProfiles;
-  let matches = (typeof passedMatches === "number") ? passedMatches : 1;
-  let hasKnowledgeGraph = passedProfiles.length > 0 ? null : false;
-
-  if (!profiles.length && env.SERPER_API_KEY) {
-    const search = await serper(query, country, env);
-    if (search.ok) {
-      profiles = extractProfiles(search.data, query);
-      matches = estimateMatches(search.data, query);
-      hasKnowledgeGraph = !!(search.data.knowledgeGraph && (search.data.knowledgeGraph.title || search.data.knowledgeGraph.description));
-    }
-  }
-  if (hasKnowledgeGraph === null) hasKnowledgeGraph = false; // assume none unless we just searched
-
-  const layerA = computeLayerA({ hasKnowledgeGraph, profiles, matches });
-
-  const signals = layerAToSignals(layerA.bySignal).concat(layerBPlaceholderSignals());
-  return {
-    stage: "result",
-    score: layerA.total,
-    scoreCap: 45,
-    hasNoSite: true,
-    resolvedUrl: null,
-    candidate: null,
-    profiles,
-    matches,
-    layerA: layerA.bySignal, layerATotal: layerA.total,
-    layerB: null, layerBTotal: null,
-    signals
-  };
-}
-
-/* =====================================================================
-   MODE: AUDIT  —  full Layer A + Layer B audit on a URL.
-   ===================================================================== */
-async function modeAudit({ url, name, country, countryName, passedProfiles, passedMatches }, env) {
+/* MODE: url_audit — pasted URL → pure 100-pt website audit */
+async function modeWebsiteAudit({ url }, env) {
   const target = normalizeUrl(url);
   if (!target) return { error: "That URL doesn't look right. Try again." };
-
   const origin = originOf(target);
-  const isUrlPasted = !passedProfiles.length;  // true means user pasted URL directly
-
-  // ---- Fetch the site (parallel) ----
   const [home, llms, llmsFull, robots, sitemap] = await Promise.all([
-    fetchText(target),
-    fetchText(origin + "/llms.txt"),
-    fetchText(origin + "/llms-full.txt"),
-    fetchText(origin + "/robots.txt"),
-    fetchText(origin + "/sitemap.xml")
+    fetchText(target), fetchText(origin + "/llms.txt"), fetchText(origin + "/llms-full.txt"),
+    fetchText(origin + "/robots.txt"), fetchText(origin + "/sitemap.xml")
   ]);
+  if (!home.ok && !llms.ok) return { error: "We couldn't reach that website. Check the address and try again." };
+  const html = home.text || "";
+  const sd = analyzeJsonLd(extractJsonLd(html));
+  const site = computeWebsiteAudit({ home, llms, llmsFull, robots, sitemap, html, sd, target });
+  return {
+    stage: "result", mode: "url_audit",
+    score: site.total, scoreCap: 100,
+    resolvedUrl: target,
+    signals: site.signals,
+    tips: buildWebsiteTips(site.signals)
+  };
+}
+function computeWebsiteAudit({ home, llms, llmsFull, robots, sitemap, html, sd, target }) {
+  const s1state = home.ok ? "full" : (home.status > 0 ? "partial" : "none");
+  const s1pts = s1state === "full" ? 10 : (s1state === "partial" ? 5 : 0);
+  const llmsBody = (llms.ok && llms.text.trim()) || (llmsFull.ok && llmsFull.text.trim()) || "";
+  const s2state = llmsBody.length > 200 ? "full" : (llmsBody.length > 0 ? "partial" : "none");
+  const s2pts = s2state === "full" ? 25 : (s2state === "partial" ? 12 : 0);
+  const richEntity = sd.hasEntity && sd.name && (sd.hasDescription || sd.hasImage);
+  const s3state = richEntity ? "full" : (sd.hasEntity ? "partial" : "none");
+  const s3pts = s3state === "full" ? 25 : (s3state === "partial" ? 12 : 0);
+  const sameAsHosts = new Set((sd.sameAs || []).map(hostOf).filter(Boolean));
+  const sameAsCount = sameAsHosts.size;
+  let s4state = "none", s4pts = 0;
+  if (sameAsCount >= 3) { s4state = "full"; s4pts = 15; }
+  else if (sameAsCount >= 1) { s4state = "partial"; s4pts = 8; }
+  const low = (html || "").toLowerCase();
+  const hasTitle  = low.indexOf("<title>") !== -1 || low.indexOf("<title ") !== -1;
+  const hasDesc   = low.indexOf('name="description"') !== -1 || low.indexOf("name='description'") !== -1;
+  const hasOg     = low.indexOf("og:title") !== -1 || low.indexOf("og:description") !== -1 || low.indexOf("og:image") !== -1;
+  const hasCanon  = low.indexOf('rel="canonical"') !== -1 || low.indexOf("rel='canonical'") !== -1;
+  const isHttps   = target.startsWith("https://") || ((home.finalUrl || "").startsWith("https://"));
+  const noindex   = low.indexOf("noindex") !== -1;
+  const stripWS = (s) => { let r = ""; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c !== 9 && c !== 32) r += s.charAt(i); } return r; };
+  const robotsLines = ((robots && robots.text) || "").toLowerCase().split("\n").map(stripWS);
+  const robotsOk = robots.ok && !robotsLines.includes("disallow:/");
+  const sitemapText = (sitemap && sitemap.text) || "";
+  const sitemapOk = sitemap.ok && (sitemapText.indexOf("<urlset") !== -1 || sitemapText.indexOf("<sitemapindex") !== -1);
+  let s5pts = 0;
+  if (hasTitle) s5pts += 5;
+  if (hasDesc)  s5pts += 5;
+  if (hasOg)    s5pts += 5;
+  if (hasCanon) s5pts += 4;
+  if (isHttps && !noindex)   s5pts += 3;
+  if (robotsOk || sitemapOk) s5pts += 3;
+  let s5state = "none";
+  if (s5pts >= 20) s5state = "full";
+  else if (s5pts >= 10) s5state = "partial";
+  const signals = [
+    { id:"site",   layer:"S", state:s1state, points:s1pts, max:10, meta:{ status: home.status } },
+    { id:"llms",   layer:"S", state:s2state, points:s2pts, max:25, meta:{ length: llmsBody.length, file: llms.ok ? "llms.txt" : (llmsFull.ok ? "llms-full.txt" : null) } },
+    { id:"schema", layer:"S", state:s3state, points:s3pts, max:25, meta:{ types: sd.types, name: sd.name || "" } },
+    { id:"sameas", layer:"S", state:s4state, points:s4pts, max:15, meta:{ count: sameAsCount, hosts: [...sameAsHosts] } },
+    { id:"basics", layer:"S", state:s5state, points:s5pts, max:25, meta:{ hasTitle, hasDesc, hasOg, hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
+  ];
+  return { signals, total: s1pts + s2pts + s3pts + s4pts + s5pts };
+}
+function buildWebsiteTips(signals) {
+  const by = {}; signals.forEach(s => by[s.id] = s);
+  const out = [];
+  if (by.llms   && by.llms.state   !== "full") out.push("Add an /llms.txt — a short plain-text page telling AI assistants who you are and what you do.");
+  if (by.schema && by.schema.state !== "full") out.push("Add Schema.org JSON-LD (Person or Organization) on your homepage with name, description, image and sameAs.");
+  if (by.sameas && by.sameas.state !== "full") out.push("Declare your real profiles (LinkedIn, Wikipedia, social, press) in sameAs on your homepage.");
+  if (by.basics && by.basics.state !== "full") out.push("Set title, meta description, Open Graph image, canonical URL, HTTPS, and allow crawlers.");
+  if (by.site   && by.site.state   !== "full") out.push("Make sure your homepage responds and is publicly reachable.");
+  return out.length ? out : ["Your website is in excellent shape — keep Schema.org and llms.txt up to date."];
+}
 
-  if (!home.ok && !llms.ok) {
-    return { error: "We couldn't reach that website. Check the address and try again." };
+/* MODE: discover — name → candidate + profiles + Layer A preview */
+async function modeDiscover({ query, country, countryName }, env) {
+  if (!env.SERPER_API_KEY) {
+    return { stage:"needs_confirmation", mode:"discover", candidate:null, profiles:[], matches:1, layerA: emptyLayerA("Name search is not enabled (no Serper key)."), layerATotal: 0 };
   }
+  const search = await serper(query, country, env);
+  if (!search.ok) {
+    return { stage:"needs_confirmation", mode:"discover", candidate:null, profiles:[], matches:1, layerA: emptyLayerA("Search is temporarily unavailable. Paste your URL instead."), layerATotal: 0 };
+  }
+  const profiles = extractProfiles(search.data, query);
+  const candidate = pickCandidate(search.data, query);
+  const matches = estimateMatches(search.data, query);
+  const layerA = computeLayerA({ profiles, matches });
+  return { stage:"needs_confirmation", mode:"discover", candidate, profiles, matches, layerA: layerA.bySignal, layerATotal: layerA.total };
+}
 
+/* MODE: no_site — Layer A only, cap 40 */
+async function modeNoSite({ query, country, countryName, passedProfiles, passedMatches }, env) {
+  let profiles = passedProfiles;
+  let matches = (typeof passedMatches === "number") ? passedMatches : 1;
+  if (!profiles.length && env.SERPER_API_KEY) {
+    const search = await serper(query, country, env);
+    if (search.ok) { profiles = extractProfiles(search.data, query); matches = estimateMatches(search.data, query); }
+  }
+  const layerA = computeLayerA({ profiles, matches });
+  const signals = layerAToSignals(layerA.bySignal).concat(layerBPlaceholderSignals());
+  return { stage:"result", mode:"no_site", score: layerA.total, scoreCap: 40, hasNoSite: true, resolvedUrl: null, candidate: null, profiles, matches, layerA: layerA.bySignal, layerATotal: layerA.total, layerB: null, layerBTotal: null, signals };
+}
+
+/* MODE: identity_audit — Layer A + Layer B */
+async function modeIdentityAudit({ url, name, country, countryName, passedProfiles, passedMatches }, env) {
+  const target = normalizeUrl(url);
+  if (!target) return { error: "That URL doesn't look right. Try again." };
+  const origin = originOf(target);
+  const [home, llms, llmsFull, robots, sitemap] = await Promise.all([
+    fetchText(target), fetchText(origin + "/llms.txt"), fetchText(origin + "/llms-full.txt"),
+    fetchText(origin + "/robots.txt"), fetchText(origin + "/sitemap.xml")
+  ]);
+  if (!home.ok && !llms.ok) return { error: "We couldn't reach that website. Check the address and try again." };
   const html = home.text || "";
   const sd = analyzeJsonLd(extractJsonLd(html));
 
-  // ---- Layer A ----
-  // If we already discovered profiles, reuse them. Otherwise we have what
-  // the site itself declares via sameAs as a proxy for AI's view.
   let profiles = passedProfiles;
   let matches = (typeof passedMatches === "number") ? passedMatches : 1;
-  let hasKnowledgeGraph = false;
-
-  if (!isUrlPasted) {
-    // came from confirm step; trust the passed data
-    hasKnowledgeGraph = !!(passedProfiles && passedProfiles.length > 0 && passedProfiles.some(p => p.fromKG));
-  } else if (env.SERPER_API_KEY && (sd.name || name)) {
-    // URL-paste path: enrich Layer A with a quick Serper using the entity name
-    const searchName = sd.name || (name && !looksLikeUrl(name) ? name : "");
-    if (searchName) {
-      const search = await serper(searchName, country, env);
-      if (search.ok) {
-        profiles = extractProfiles(search.data, searchName);
-        matches = estimateMatches(search.data, searchName);
-        hasKnowledgeGraph = !!(search.data.knowledgeGraph && (search.data.knowledgeGraph.title || search.data.knowledgeGraph.description));
-      }
-    }
-  }
-  // If still no profiles, fall back to the site's own sameAs declarations as a proxy
   if (!profiles.length && sd.sameAs.length) {
-    profiles = sd.sameAs.map(u => ({ platform: classifyHost(u) || "other", url: u, title: "" }))
-      .filter(p => p.platform !== "other" || true);
+    profiles = sd.sameAs.map(u => ({ platform: classifyHost(u) || "other", url: u, title: "" }));
     matches = 1;
   }
-
-  const layerA = computeLayerA({ hasKnowledgeGraph, profiles, matches, isUrlPasted });
-
-  // ---- Layer B ----
-  const layerB = computeLayerB({
-    home, llms, llmsFull, robots, sitemap,
-    html, sd, target, profiles
-  });
-
+  const layerA = computeLayerA({ profiles, matches });
+  const layerB = computeLayerB({ home, llms, llmsFull, robots, sitemap, html, sd, target, profiles });
   const signals = layerAToSignals(layerA.bySignal).concat(layerBToSignals(layerB.bySignal));
   const total = layerA.total + layerB.total;
-
-  return {
-    stage: "result",
-    score: total,
-    scoreCap: 100,
-    hasNoSite: false,
-    resolvedUrl: target,
-    candidate: null,
-    profiles,
-    matches,
-    layerA: layerA.bySignal, layerATotal: layerA.total,
-    layerB: layerB.bySignal, layerBTotal: layerB.total,
-    signals
-  };
+  return { stage:"result", mode:"identity_audit", score: total, scoreCap: 100, hasNoSite: false, resolvedUrl: target, candidate: null, profiles, matches, layerA: layerA.bySignal, layerATotal: layerA.total, layerB: layerB.bySignal, layerBTotal: layerB.total, signals };
 }
 
-/* =====================================================================
-   LAYER A — Presence & identity (max 45)
-     A1 knowledgeGraph        15 pts  (full = present, none = absent)
-     A2 profileBreadth        20 pts  (1=>7, 2=>13, 3+=>20)
-     A3 identityClarity       10 pts  (matches: 1=>10, 2-3=>5, 4+=>0)
-   ===================================================================== */
-function computeLayerA({ hasKnowledgeGraph, profiles, matches, isUrlPasted = false }) {
+/* LAYER A — max 40 (no KG)
+     profileBreadth   25  (0→0, 1→10, 2→18, 3+→25)
+     identityClarity  15  (1→15, 2-3→8, 4+→0)                          */
+function computeLayerA({ profiles, matches }) {
   const platformsSeen = new Set((profiles || []).map(p => p.platform).filter(Boolean));
   const breadth = platformsSeen.size;
-
-  const a1state = hasKnowledgeGraph ? "full" : "none";
-  const a1pts = a1state === "full" ? 15 : 0;
-
+  let a1pts = 0, a1state = "none";
+  if (breadth >= 3) { a1pts = 25; a1state = "full"; }
+  else if (breadth === 2) { a1pts = 18; a1state = "partial"; }
+  else if (breadth === 1) { a1pts = 10; a1state = "partial"; }
+  const m = (typeof matches === "number") ? matches : 1;
   let a2pts = 0, a2state = "none";
-  if (breadth >= 3) { a2pts = 20; a2state = "full"; }
-  else if (breadth === 2) { a2pts = 13; a2state = "partial"; }
-  else if (breadth === 1) { a2pts = 7; a2state = "partial"; }
-
-  let a3pts = 0, a3state = "none";
-  if (isUrlPasted || matches <= 1) { a3pts = 10; a3state = "full"; }
-  else if (matches <= 3) { a3pts = 5; a3state = "partial"; }
-
+  if (m <= 1) { a2pts = 15; a2state = "full"; }
+  else if (m <= 3) { a2pts = 8; a2state = "partial"; }
   const bySignal = {
-    knowledgeGraph: { state: a1state, points: a1pts, max: 15, meta: {} },
-    profileBreadth: { state: a2state, points: a2pts, max: 20, meta: { count: breadth, platforms: [...platformsSeen] } },
-    identityClarity: { state: a3state, points: a3pts, max: 10, meta: { matches } }
+    profileBreadth:  { state: a1state, points: a1pts, max: 25, meta: { count: breadth, platforms: [...platformsSeen] } },
+    identityClarity: { state: a2state, points: a2pts, max: 15, meta: { matches: m } }
   };
-  return { bySignal, total: a1pts + a2pts + a3pts };
+  return { bySignal, total: a1pts + a2pts };
 }
-
 function emptyLayerA(note) {
   return {
-    knowledgeGraph: { state: "none", points: 0, max: 15, meta: { note } },
-    profileBreadth: { state: "none", points: 0, max: 20, meta: { count: 0, platforms: [] } },
-    identityClarity: { state: "none", points: 0, max: 10, meta: { matches: 0 } }
+    profileBreadth:  { state:"none", points:0, max:25, meta:{ count:0, platforms:[], note } },
+    identityClarity: { state:"none", points:0, max:15, meta:{ matches:0 } }
   };
 }
-
 function layerAToSignals(la) {
   return [
-    { id: "kg",       layer: "A", ...la.knowledgeGraph },
-    { id: "profiles", layer: "A", ...la.profileBreadth },
-    { id: "clarity",  layer: "A", ...la.identityClarity }
+    { id:"profiles", layer:"A", ...la.profileBreadth },
+    { id:"clarity",  layer:"A", ...la.identityClarity }
   ];
 }
 
-/* =====================================================================
-   LAYER B — Your own hub (max 55)
-     B1 ownedSite                       15  (reachable homepage)
-     B2 llmsTxt                         10  (llms.txt or llms-full.txt)
-     B3 structuredData                  10  (Schema.org Person/Org)
-     B4 sameAsCrossVerification         10  (site sameAs ∩ found profiles)
-     B5 pageBasicsCanonicalHttpsCrawl   10  (title/desc/OG + canonical + https + robots/sitemap)
-   ===================================================================== */
+/* LAYER B — max 60 (regex-free)
+     site 8 · llms 14 · schema 14 · sameas_xref 14 · basics 10           */
 function computeLayerB({ home, llms, llmsFull, robots, sitemap, html, sd, target, profiles }) {
-  // NOTE: regex-free on purpose. The Cloudflare Pages Functions bundler
-  // has been observed throwing "$ is not defined" intermittently on regex
-  // character classes that mix quote types. Plain string searches are safe.
   const b1state = home.ok ? "full" : (home.status > 0 ? "partial" : "none");
-  const b1pts = b1state === "full" ? 15 : (b1state === "partial" ? 8 : 0);
-
+  const b1pts = b1state === "full" ? 8 : (b1state === "partial" ? 4 : 0);
   const llmsBody = (llms.ok && llms.text.trim()) || (llmsFull.ok && llmsFull.text.trim()) || "";
   const b2state = llmsBody.length > 200 ? "full" : (llmsBody.length > 0 ? "partial" : "none");
-  const b2pts = b2state === "full" ? 10 : (b2state === "partial" ? 5 : 0);
-
+  const b2pts = b2state === "full" ? 14 : (b2state === "partial" ? 7 : 0);
   const richEntity = sd.hasEntity && sd.name && (sd.hasDescription || sd.hasImage);
   const b3state = richEntity ? "full" : (sd.hasEntity ? "partial" : "none");
-  const b3pts = b3state === "full" ? 10 : (b3state === "partial" ? 5 : 0);
-
+  const b3pts = b3state === "full" ? 14 : (b3state === "partial" ? 7 : 0);
   const profileHosts = new Set((profiles || []).map(p => hostOf(p.url)).filter(Boolean));
   const sameAsHosts = new Set((sd.sameAs || []).map(hostOf).filter(Boolean));
   let crossMatches = 0;
   for (const h of sameAsHosts) if (profileHosts.has(h)) crossMatches++;
   let b4state = "none", b4pts = 0;
-  if (crossMatches >= 2) { b4state = "full"; b4pts = 10; }
-  else if (crossMatches === 1) { b4state = "partial"; b4pts = 5; }
-  else if (sameAsHosts.size >= 1 && profileHosts.size === 0) { b4state = "partial"; b4pts = 5; }
-
+  if (crossMatches >= 2) { b4state = "full"; b4pts = 14; }
+  else if (crossMatches === 1) { b4state = "partial"; b4pts = 7; }
+  else if (sameAsHosts.size >= 1 && profileHosts.size === 0) { b4state = "partial"; b4pts = 7; }
   const low = (html || "").toLowerCase();
-  const hasTitle  = low.indexOf("<title>") !== -1 || low.indexOf("<title ") !== -1;
-  const hasDescD  = low.indexOf("name=\u0022description\u0022") !== -1;
-  const hasDescS  = low.indexOf("name=\u0027description\u0027") !== -1;
-  const hasDesc   = hasDescD || hasDescS;
-  const hasOg     = low.indexOf("og:title") !== -1 || low.indexOf("og:description") !== -1 || low.indexOf("og:image") !== -1;
-  const hasCanonD = low.indexOf("rel=\u0022canonical\u0022") !== -1;
-  const hasCanonS = low.indexOf("rel=\u0027canonical\u0027") !== -1;
-  const hasCanon  = hasCanonD || hasCanonS;
-  const isHttps   = target.startsWith("https://") || ((home.finalUrl || "").startsWith("https://"));
-  const noindex   = low.indexOf("noindex") !== -1;
-
-  // robots.txt: blocked if any line trimmed of tabs/spaces equals "disallow:/"
+  const hasTitle = low.indexOf("<title>") !== -1 || low.indexOf("<title ") !== -1;
+  const hasDesc  = low.indexOf('name="description"') !== -1 || low.indexOf("name='description'") !== -1;
+  const hasOg    = low.indexOf("og:title") !== -1 || low.indexOf("og:description") !== -1 || low.indexOf("og:image") !== -1;
+  const hasCanon = low.indexOf('rel="canonical"') !== -1 || low.indexOf("rel='canonical'") !== -1;
+  const isHttps  = target.startsWith("https://") || ((home.finalUrl || "").startsWith("https://"));
+  const noindex  = low.indexOf("noindex") !== -1;
   const stripWS = (s) => { let r = ""; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c !== 9 && c !== 32) r += s.charAt(i); } return r; };
   const robotsLines = ((robots && robots.text) || "").toLowerCase().split("\n").map(stripWS);
   const robotsOk = robots.ok && !robotsLines.includes("disallow:/");
-
   const sitemapText = (sitemap && sitemap.text) || "";
   const sitemapOk = sitemap.ok && (sitemapText.indexOf("<urlset") !== -1 || sitemapText.indexOf("<sitemapindex") !== -1);
-
   let b5pts = 0;
   if (hasTitle) b5pts += 2;
   if (hasDesc)  b5pts += 2;
   if (hasOg)    b5pts += 2;
   if (hasCanon) b5pts += 2;
-  if (isHttps && !noindex) b5pts += 1;
+  if (isHttps && !noindex)   b5pts += 1;
   if (robotsOk || sitemapOk) b5pts += 1;
   let b5state = "none";
   if (b5pts >= 8) b5state = "full";
   else if (b5pts >= 4) b5state = "partial";
-
   const bySignal = {
-    ownedSite:         { state: b1state, points: b1pts, max: 15, meta: { status: home.status } },
-    llmsTxt:           { state: b2state, points: b2pts, max: 10, meta: { length: llmsBody.length, file: llms.ok ? "llms.txt" : (llmsFull.ok ? "llms-full.txt" : null) } },
-    structuredData:    { state: b3state, points: b3pts, max: 10, meta: { types: sd.types, name: sd.name || "" } },
-    sameAsCrossVerify: { state: b4state, points: b4pts, max: 10, meta: { matches: crossMatches, siteSameAs: [...sameAsHosts], profileHosts: [...profileHosts] } },
-    pageBasics:        { state: b5state, points: b5pts, max: 10, meta: { hasTitle: hasTitle, hasDesc: hasDesc, hasOg: hasOg, hasCanon: hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
+    ownedSite:         { state: b1state, points: b1pts, max: 8,  meta: { status: home.status } },
+    llmsTxt:           { state: b2state, points: b2pts, max: 14, meta: { length: llmsBody.length, file: llms.ok ? "llms.txt" : (llmsFull.ok ? "llms-full.txt" : null) } },
+    structuredData:    { state: b3state, points: b3pts, max: 14, meta: { types: sd.types, name: sd.name || "" } },
+    sameAsCrossVerify: { state: b4state, points: b4pts, max: 14, meta: { matches: crossMatches, siteSameAs: [...sameAsHosts], profileHosts: [...profileHosts] } },
+    pageBasics:        { state: b5state, points: b5pts, max: 10, meta: { hasTitle, hasDesc, hasOg, hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
   };
   return { bySignal, total: b1pts + b2pts + b3pts + b4pts + b5pts };
 }
-
 function layerBToSignals(lb) {
   return [
-    { id: "site",         layer: "B", ...lb.ownedSite },
-    { id: "llms",         layer: "B", ...lb.llmsTxt },
-    { id: "schema",       layer: "B", ...lb.structuredData },
-    { id: "sameas_xref",  layer: "B", ...lb.sameAsCrossVerify },
-    { id: "basics",       layer: "B", ...lb.pageBasics }
+    { id:"site",         layer:"B", ...lb.ownedSite },
+    { id:"llms",         layer:"B", ...lb.llmsTxt },
+    { id:"schema",       layer:"B", ...lb.structuredData },
+    { id:"sameas_xref",  layer:"B", ...lb.sameAsCrossVerify },
+    { id:"basics",       layer:"B", ...lb.pageBasics }
   ];
 }
 function layerBPlaceholderSignals() {
   return [
-    { id: "site",        layer: "B", state: "none", points: 0, max: 15, meta: { noSite: true } },
-    { id: "llms",        layer: "B", state: "none", points: 0, max: 10, meta: { noSite: true } },
-    { id: "schema",      layer: "B", state: "none", points: 0, max: 10, meta: { noSite: true } },
-    { id: "sameas_xref", layer: "B", state: "none", points: 0, max: 10, meta: { noSite: true } },
-    { id: "basics",      layer: "B", state: "none", points: 0, max: 10, meta: { noSite: true } }
+    { id:"site",        layer:"B", state:"none", points:0, max:8,  meta:{ noSite:true } },
+    { id:"llms",        layer:"B", state:"none", points:0, max:14, meta:{ noSite:true } },
+    { id:"schema",      layer:"B", state:"none", points:0, max:14, meta:{ noSite:true } },
+    { id:"sameas_xref", layer:"B", state:"none", points:0, max:14, meta:{ noSite:true } },
+    { id:"basics",      layer:"B", state:"none", points:0, max:10, meta:{ noSite:true } }
   ];
 }
 
-/* =====================================================================
-   SERPER + result parsing
-   ===================================================================== */
+/* Helpers */
 async function serper(query, country, env) {
   try {
     const res = await withTimeout(fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: { "X-API-KEY": env.SERPER_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        q: query,
-        gl: (country && country !== "__" ? country.toLowerCase() : "us"),
-        num: 10
-      })
+      method:"POST",
+      headers:{ "X-API-KEY": env.SERPER_API_KEY, "Content-Type":"application/json" },
+      body: JSON.stringify({ q: query, gl: (country && country !== "__" ? country.toLowerCase() : "us"), num: 10 })
     }));
-    if (!res.ok) return { ok: false };
+    if (!res.ok) return { ok:false };
     const data = await res.json();
-    return { ok: true, data };
-  } catch (e) {
-    return { ok: false };
-  }
+    return { ok:true, data };
+  } catch (e) { return { ok:false }; }
 }
-
 function extractProfiles(data, name) {
   const organic = Array.isArray(data.organic) ? data.organic : [];
   const seen = new Set();
@@ -453,64 +351,47 @@ function extractProfiles(data, name) {
     seen.add(key);
     profiles.push({ platform: plat, url: r.link, title: r.title || "" });
   }
-  // Also consider knowledgeGraph attributes
-  if (data.knowledgeGraph) {
-    if (Array.isArray(data.knowledgeGraph.attributes)) {
-      // sometimes social links live here as URLs in values
-    }
-    if (Array.isArray(data.knowledgeGraph.profiles)) {
-      for (const p of data.knowledgeGraph.profiles) {
-        const plat = classifyHost(p.link);
-        if (plat && !seen.has(plat + "|" + hostOf(p.link))) {
-          profiles.push({ platform: plat, url: p.link, title: p.name || "", fromKG: true });
-          seen.add(plat + "|" + hostOf(p.link));
-        }
+  if (data.knowledgeGraph && Array.isArray(data.knowledgeGraph.profiles)) {
+    for (const p of data.knowledgeGraph.profiles) {
+      const plat = classifyHost(p.link);
+      if (plat && !seen.has(plat + "|" + hostOf(p.link))) {
+        profiles.push({ platform: plat, url: p.link, title: p.name || "", fromKG: true });
+        seen.add(plat + "|" + hostOf(p.link));
       }
     }
   }
   return profiles;
 }
-
-function pickCandidate(data) {
-  // 1) Serper knowledgeGraph.website is the strongest signal
+function pickCandidate(data, name) {
   if (data.knowledgeGraph && data.knowledgeGraph.website) {
     const u = normalizeUrl(data.knowledgeGraph.website);
-    if (u && !isThirdParty(u)) {
-      return {
-        url: u,
-        title: data.knowledgeGraph.title || hostOf(u),
-        snippet: data.knowledgeGraph.description || "",
-        source: "knowledgeGraph"
-      };
-    }
+    if (u && !isThirdParty(u)) return { url: u, title: data.knowledgeGraph.title || hostOf(u), snippet: data.knowledgeGraph.description || "", source: "knowledgeGraph" };
   }
-  // 2) First organic that is NOT a platform / NOT news/PR
   const organic = Array.isArray(data.organic) ? data.organic : [];
-  for (const r of organic) {
-    if (!r.link) continue;
-    if (!isThirdParty(r.link)) {
-      return {
-        url: normalizeUrl(r.link),
-        title: r.title || hostOf(r.link),
-        snippet: r.snippet || "",
-        source: "organic"
-      };
+  const candidates = organic.filter(r => r.link && !isThirdParty(r.link));
+  if (!candidates.length) return null;
+  const slug = (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (slug.length >= 3) {
+    for (const r of candidates) {
+      const host = hostOf(r.link);
+      const parts = host.split(".");
+      const rootName = parts.slice(0, Math.max(1, parts.length - 1)).join("");
+      if (rootName === slug || rootName.indexOf(slug) !== -1 || slug.indexOf(rootName) !== -1) {
+        return { url: normalizeUrl(r.link), title: r.title || host, snippet: r.snippet || "", source: "nameMatch" };
+      }
     }
   }
-  return null;
+  const r = candidates[0];
+  return { url: normalizeUrl(r.link), title: r.title || hostOf(r.link), snippet: r.snippet || "", source: "organic" };
 }
-
 function estimateMatches(data, name) {
   const organic = Array.isArray(data.organic) ? data.organic : [];
   if (!organic.length) return 1;
   const nm = (name || "").toLowerCase();
   const titleHits = organic.filter(o => ((o.title || "") + " " + (o.snippet || "")).toLowerCase().includes(nm)).length;
   const distinctHosts = new Set(organic.map(o => hostOf(o.link)).filter(Boolean));
-  // Heuristic: more distinct hosts mentioning the name -> more candidates with that name
   return Math.max(1, Math.min(distinctHosts.size, Math.round(titleHits / 1.5)) || 1);
 }
-
-/* ---------- platform classification + filters ---------- */
 function classifyHost(url) {
   const h = hostOf(url);
   if (!h) return null;
@@ -530,8 +411,6 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, "").toLowerCase(); }
   catch (e) { return ""; }
 }
-
-/* ---------- JSON-LD parsing ---------- */
 function extractJsonLd(html) {
   const blocks = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
@@ -546,10 +425,7 @@ function analyzeJsonLd(blocks) {
   const walk = (n) => {
     if (!n) return;
     if (Array.isArray(n)) return n.forEach(walk);
-    if (typeof n === "object") {
-      flat.push(n);
-      if (n["@graph"]) walk(n["@graph"]);
-    }
+    if (typeof n === "object") { flat.push(n); if (n["@graph"]) walk(n["@graph"]); }
   };
   blocks.forEach(walk);
   const ENTITY = ["Person","Organization","LocalBusiness","Corporation","Brand","Book","Product","WebSite"];
@@ -565,15 +441,8 @@ function analyzeJsonLd(blocks) {
     if (node.image) hasImage = true;
     if (node.sameAs) sameAs = sameAs.concat(Array.isArray(node.sameAs) ? node.sameAs : [node.sameAs]);
   });
-  return {
-    hasEntity, hasDescription, hasImage,
-    types: [...new Set(types)],
-    name,
-    sameAs: [...new Set(sameAs)]
-  };
+  return { hasEntity, hasDescription, hasImage, types:[...new Set(types)], name, sameAs:[...new Set(sameAs)] };
 }
-
-/* ---------- url + fetch helpers ---------- */
 function looksLikeUrl(q) {
   if (!q) return false;
   return /^https?:\/\//i.test(q) || /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(q);
@@ -590,18 +459,13 @@ function originOf(url) {
 async function fetchText(url) {
   try {
     const res = await withTimeout(fetch(url, {
-      redirect: "follow",
-      headers: { "User-Agent": "EverybodyKnowsYou-DiscoverabilityBot/1.0 (+https://everybodyknowsyou.com)" }
+      redirect:"follow",
+      headers:{ "User-Agent":"EverybodyKnowsYou-DiscoverabilityBot/1.0 (+https://everybodyknowsyou.com)" }
     }));
     const text = res.ok ? await res.text() : "";
     return { ok: res.ok, status: res.status, text: text.slice(0, 400000), finalUrl: res.url };
-  } catch (e) {
-    return { ok: false, status: 0, text: "", finalUrl: url };
-  }
+  } catch (e) { return { ok:false, status:0, text:"", finalUrl:url }; }
 }
 function withTimeout(promise) {
-  return Promise.race([
-    promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), FETCH_TIMEOUT))
-  ]);
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), FETCH_TIMEOUT))]);
 }
