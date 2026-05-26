@@ -72,7 +72,8 @@ export async function onRequestPost(context) {
     const result = await handle(body, context.env || {});
     return new Response(JSON.stringify(result), { status: 200, headers });
   } catch (err) {
-    return new Response(JSON.stringify({ error: "Something went wrong. Please try again.", _debug: { msg: String((err && err.message) || err), stack: String((err && err.stack) || "").split("\n").slice(0,8).join(" | ") } }), { status: 200, headers });
+    try { console.error("score.js error:", err && (err.stack || err.message || err)); } catch (_) {}
+    return new Response(JSON.stringify({ error: "Something went wrong. Please try again." }), { status: 200, headers });
   }
 }
 
@@ -335,21 +336,20 @@ function layerAToSignals(la) {
      B5 pageBasicsCanonicalHttpsCrawl   10  (title/desc/OG + canonical + https + robots/sitemap)
    ===================================================================== */
 function computeLayerB({ home, llms, llmsFull, robots, sitemap, html, sd, target, profiles }) {
-  // B1
+  // NOTE: regex-free on purpose. The Cloudflare Pages Functions bundler
+  // has been observed throwing "$ is not defined" intermittently on regex
+  // character classes that mix quote types. Plain string searches are safe.
   const b1state = home.ok ? "full" : (home.status > 0 ? "partial" : "none");
   const b1pts = b1state === "full" ? 15 : (b1state === "partial" ? 8 : 0);
 
-  // B2
   const llmsBody = (llms.ok && llms.text.trim()) || (llmsFull.ok && llmsFull.text.trim()) || "";
   const b2state = llmsBody.length > 200 ? "full" : (llmsBody.length > 0 ? "partial" : "none");
   const b2pts = b2state === "full" ? 10 : (b2state === "partial" ? 5 : 0);
 
-  // B3
   const richEntity = sd.hasEntity && sd.name && (sd.hasDescription || sd.hasImage);
   const b3state = richEntity ? "full" : (sd.hasEntity ? "partial" : "none");
   const b3pts = b3state === "full" ? 10 : (b3state === "partial" ? 5 : 0);
 
-  // B4 — cross verification
   const profileHosts = new Set((profiles || []).map(p => hostOf(p.url)).filter(Boolean));
   const sameAsHosts = new Set((sd.sameAs || []).map(hostOf).filter(Boolean));
   let crossMatches = 0;
@@ -359,16 +359,25 @@ function computeLayerB({ home, llms, llmsFull, robots, sitemap, html, sd, target
   else if (crossMatches === 1) { b4state = "partial"; b4pts = 5; }
   else if (sameAsHosts.size >= 1 && profileHosts.size === 0) { b4state = "partial"; b4pts = 5; }
 
-  // B5
-  const lower = html.toLowerCase();
-  const hasTitle = /<title[^>]*>s*S+/i.test(html);
-  const hasDesc  = /<meta[^>]+name=["']description["'][^>]+content=["'][^"']{20,}/i.test(html);
-  const hasOg    = /<meta[^>]+property=["']og:(title|description|image)["']/i.test(html);
-  const hasCanon = /<link[^>]+rel=["']canonical["'][^>]+href=/i.test(html);
-  const isHttps  = (target.startsWith("https://")) || ((home.finalUrl || "").startsWith("https://"));
-  const noindex  = /<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*noindex/i.test(html);
-  const robotsOk = robots.ok && !/disallow:s*/s*$/im.test(robots.text);
-  const sitemapOk = sitemap.ok && /<urlset|<sitemapindex/i.test(sitemap.text);
+  const low = (html || "").toLowerCase();
+  const hasTitle  = low.indexOf("<title>") !== -1 || low.indexOf("<title ") !== -1;
+  const hasDescD  = low.indexOf("name=\u0022description\u0022") !== -1;
+  const hasDescS  = low.indexOf("name=\u0027description\u0027") !== -1;
+  const hasDesc   = hasDescD || hasDescS;
+  const hasOg     = low.indexOf("og:title") !== -1 || low.indexOf("og:description") !== -1 || low.indexOf("og:image") !== -1;
+  const hasCanonD = low.indexOf("rel=\u0022canonical\u0022") !== -1;
+  const hasCanonS = low.indexOf("rel=\u0027canonical\u0027") !== -1;
+  const hasCanon  = hasCanonD || hasCanonS;
+  const isHttps   = target.startsWith("https://") || ((home.finalUrl || "").startsWith("https://"));
+  const noindex   = low.indexOf("noindex") !== -1;
+
+  // robots.txt: blocked if any line trimmed of tabs/spaces equals "disallow:/"
+  const stripWS = (s) => { let r = ""; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c !== 9 && c !== 32) r += s.charAt(i); } return r; };
+  const robotsLines = ((robots && robots.text) || "").toLowerCase().split("\n").map(stripWS);
+  const robotsOk = robots.ok && !robotsLines.includes("disallow:/");
+
+  const sitemapText = (sitemap && sitemap.text) || "";
+  const sitemapOk = sitemap.ok && (sitemapText.indexOf("<urlset") !== -1 || sitemapText.indexOf("<sitemapindex") !== -1);
 
   let b5pts = 0;
   if (hasTitle) b5pts += 2;
@@ -386,7 +395,7 @@ function computeLayerB({ home, llms, llmsFull, robots, sitemap, html, sd, target
     llmsTxt:           { state: b2state, points: b2pts, max: 10, meta: { length: llmsBody.length, file: llms.ok ? "llms.txt" : (llmsFull.ok ? "llms-full.txt" : null) } },
     structuredData:    { state: b3state, points: b3pts, max: 10, meta: { types: sd.types, name: sd.name || "" } },
     sameAsCrossVerify: { state: b4state, points: b4pts, max: 10, meta: { matches: crossMatches, siteSameAs: [...sameAsHosts], profileHosts: [...profileHosts] } },
-    pageBasics:        { state: b5state, points: b5pts, max: 10, meta: { hasTitle, hasDesc, hasOg, hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
+    pageBasics:        { state: b5state, points: b5pts, max: 10, meta: { hasTitle: hasTitle, hasDesc: hasDesc, hasOg: hasOg, hasCanon: hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
   };
   return { bySignal, total: b1pts + b2pts + b3pts + b4pts + b5pts };
 }
