@@ -72,7 +72,7 @@ export async function onRequestPost(context) {
     const result = await handle(body, context.env || {});
     return new Response(JSON.stringify(result), { status: 200, headers });
   } catch (err) {
-    return new Response(JSON.stringify({ error: "Something went wrong. Please try again." }), { status: 200, headers });
+    return new Response(JSON.stringify({ error: "Something went wrong. Please try again.", _debug: { msg: String((err && err.message) || err), stack: String((err && err.stack) || "").split("\n").slice(0,8).join(" | "), name: String(err && err.name || "") } }), { status: 200, headers });
   }
 }
 
