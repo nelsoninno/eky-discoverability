@@ -3,408 +3,459 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>How discoverable are you? — Everybody Knows You</title>
-<meta name="description" content="Check how easily AI assistants can find and understand you, your project, book, business, brand or community." />
+<title>Does AI know who you are? — Everybody Knows You</title>
+<meta name="description" content="See what AI actually sees when someone looks you up — and what's missing. A free check from Everybody Knows You." />
 <style>
-  /* ============================================================
-     EVERYBODY KNOWS YOU — AI Discoverability Checker
-     Self-contained widget. No external dependencies.
-     Drop into a page, or embed via <iframe>.
-     Configure the backend in the CONFIG block in the <script> below.
-     ============================================================ */
+/* ============================================================
+   EVERYBODY KNOWS YOU — Discoverability Audit  v2
+   NEUTRAL STYLING ONLY. The site brand is being redesigned —
+   this widget will be re-skinned during native integration.
+   Focus here is FUNCTION (logic, flow, scoring). All classes
+   are namespaced eky- so they won't collide with the host site.
+   ============================================================ */
 
-  :root{
-    --bg:        #0e1116;
-    --panel:     #161b23;
-    --panel-2:   #1d242e;
-    --border:    #2a323d;
-    --text:      #eef2f7;
-    --muted:     #9aa6b2;
-    --brand:     #5b8cff;
-    --brand-2:   #8a5bff;
-    --good:      #1fbf75;
-    --warn:      #f5a524;
-    --bad:       #ef4a4a;
-    --radius:    16px;
-    --shadow:    0 18px 50px rgba(0,0,0,.35);
-    --font:      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  }
+:root{
+  --bg:        #0f1217;
+  --panel:     #181d24;
+  --panel-2:   #1f2630;
+  --line:      #2c333e;
+  --text:      #eef2f7;
+  --text-soft: #b3bcc7;
+  --text-muted:#8a96a3;
+  --accent:    #6E70E1;
+  --accent-2:  #8a5bff;
+  --good:      #2DBB78;
+  --mid:       #FFCD2E;
+  --bad:       #E14C42;
+  --radius:    14px;
+  --radius-sm: 10px;
+  --shadow:    0 18px 40px rgba(0,0,0,.32);
+  --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
 
-  *{ box-sizing:border-box; }
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; background:var(--bg); }
+body{ font-family:var(--font); color:var(--text); -webkit-font-smoothing:antialiased; }
 
-  .eky-wrap{
-    font-family:var(--font);
-    color:var(--text);
-    background:
-      radial-gradient(1200px 600px at 50% -10%, rgba(91,140,255,.16), transparent 60%),
-      radial-gradient(900px 500px at 90% 10%, rgba(138,91,255,.12), transparent 55%),
-      var(--bg);
-    min-height:100%;
-    padding:48px 20px 64px;
-    display:flex;
-    justify-content:center;
-  }
+.eky-page{ min-height:100%; }
 
-  .eky-card{
-    width:100%;
-    max-width:760px;
-  }
+/* ===== top bar (lang toggle) ===== */
+.eky-top{ display:flex; justify-content:flex-end; padding:14px 22px 0; }
+.eky-lang{
+  display:inline-flex; gap:4px;
+  background:var(--panel); border:1px solid var(--line); border-radius:999px;
+  padding:4px;
+}
+.eky-lang button{
+  background:transparent; border:none; cursor:pointer;
+  font-family:inherit; font-weight:600; font-size:13px;
+  color:var(--text-muted);
+  padding:4px 10px; border-radius:999px;
+}
+.eky-lang button.on{ background:var(--accent); color:#fff; }
 
-  .eky-eyebrow{
-    text-transform:uppercase;
-    letter-spacing:.16em;
-    font-size:12px;
-    font-weight:700;
-    color:var(--brand);
-    text-align:center;
-    margin:0 0 12px;
-  }
+/* ===== hero ===== */
+.eky-hero{ text-align:center; padding:28px 20px 6px; max-width:820px; margin:0 auto; }
+.eky-eyebrow{
+  text-transform:uppercase; letter-spacing:.16em;
+  font-size:11px; font-weight:700;
+  color:var(--accent); margin:0 0 8px;
+}
+.eky-title{
+  font-weight:800; font-size:clamp(26px, 4.8vw, 40px);
+  line-height:1.1; letter-spacing:-.02em; margin:0 0 12px;
+}
+.eky-title .pop{ color:var(--accent-2); }
+.eky-sub{
+  font-size:clamp(14px, 1.8vw, 17px);
+  color:var(--text-soft); line-height:1.5;
+  max-width:560px; margin:0 auto 24px;
+}
 
-  .eky-title{
-    text-align:center;
-    font-size:clamp(28px, 5vw, 44px);
-    line-height:1.1;
-    font-weight:800;
-    margin:0 0 14px;
-    letter-spacing:-.02em;
-  }
-  .eky-title .grad{
-    background:linear-gradient(90deg, var(--brand), var(--brand-2));
-    -webkit-background-clip:text;
-    background-clip:text;
-    color:transparent;
-  }
+/* ===== form card ===== */
+.eky-wrap{ max-width:760px; margin:0 auto; padding:0 20px 48px; }
+.eky-card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:18px;
+}
 
-  .eky-sub{
-    text-align:center;
-    color:var(--muted);
-    font-size:clamp(15px,2.2vw,18px);
-    max-width:560px;
-    margin:0 auto 30px;
-    line-height:1.5;
-  }
+.eky-row{ display:flex; flex-wrap:wrap; gap:10px; }
+.eky-country{ flex:0 0 200px; }
+.eky-input-cell{ flex:1 1 240px; min-width:0; }
 
-  /* ---- Search form ---- */
-  .eky-form{
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    padding:18px;
-    box-shadow:var(--shadow);
-  }
+label.eky-lbl{
+  display:block; font-size:12px; font-weight:600;
+  color:var(--text-muted); margin:0 0 6px 2px;
+}
 
-  .eky-row{
-    display:flex;
-    gap:10px;
-    flex-wrap:wrap;
-  }
+select.eky-select, input.eky-text{
+  width:100%; height:48px;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  color:var(--text);
+  font-family:inherit; font-size:15px;
+  padding:0 12px;
+  outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+select.eky-select{
+  appearance:none; cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a96a3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 12px center;
+  padding-right:34px;
+}
+input.eky-text:focus, select.eky-select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(110,112,225,.22);
+}
 
-  .eky-country{
-    position:relative;
-    flex:0 0 200px;
-  }
-  .eky-input-cell{ flex:1 1 240px; min-width:0; }
+.eky-cta{
+  height:48px; padding:0 22px;
+  background:var(--accent); color:#fff;
+  border:none; border-radius:var(--radius-sm);
+  font-family:inherit; font-weight:700; font-size:15px;
+  cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  transition:filter .15s, opacity .15s, transform .08s;
+}
+.eky-cta:hover{ filter:brightness(1.08); }
+.eky-cta:active{ transform:translateY(1px); }
+.eky-cta[disabled]{ opacity:.6; cursor:wait; }
+.eky-cta.ghost{
+  background:transparent; color:var(--text);
+  border:1px solid var(--line);
+}
+.eky-cta.ghost:hover{ background:var(--panel-2); }
 
-  label.eky-lbl{
-    display:block;
-    font-size:12px;
-    font-weight:600;
-    color:var(--muted);
-    margin:0 0 6px 2px;
-  }
+.eky-hint{ margin:12px 2px 0; color:var(--text-muted); font-size:12.5px; line-height:1.5; }
 
-  select.eky-select,
-  input.eky-text{
-    width:100%;
-    height:52px;
-    background:var(--panel-2);
-    border:1px solid var(--border);
-    border-radius:12px;
-    color:var(--text);
-    font-size:16px;
-    padding:0 14px;
-    outline:none;
-    transition:border-color .15s, box-shadow .15s;
-    font-family:inherit;
-  }
-  select.eky-select{
-    appearance:none;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239aa6b2' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-    background-repeat:no-repeat;
-    background-position:right 14px center;
-    padding-right:38px;
-    cursor:pointer;
-  }
-  input.eky-text:focus,
-  select.eky-select:focus{
-    border-color:var(--brand);
-    box-shadow:0 0 0 3px rgba(91,140,255,.22);
-  }
+/* ===== error ===== */
+.eky-err{
+  display:none;
+  margin:12px 0 0; padding:10px 14px;
+  background:rgba(225,76,66,.12); border:1px solid rgba(225,76,66,.5);
+  border-radius:var(--radius-sm); color:#ff9b94; font-size:13.5px;
+}
+.eky-err.show{ display:block; }
 
-  .eky-go{
-    height:52px;
-    flex:0 0 auto;
-    padding:0 26px;
-    border:none;
-    border-radius:12px;
-    background:linear-gradient(90deg, var(--brand), var(--brand-2));
-    color:#fff;
-    font-size:16px;
-    font-weight:700;
-    cursor:pointer;
-    display:inline-flex;
-    align-items:center;
-    gap:8px;
-    transition:transform .08s, filter .15s, opacity .15s;
-    font-family:inherit;
-  }
-  .eky-go:hover{ filter:brightness(1.08); }
-  .eky-go:active{ transform:translateY(1px); }
-  .eky-go[disabled]{ opacity:.6; cursor:not-allowed; }
+/* ===== loading spinner ===== */
+.eky-spin{
+  width:16px; height:16px;
+  border:2.5px solid rgba(255,255,255,.35);
+  border-top-color:#fff;
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+  display:inline-block; vertical-align:middle;
+}
+@keyframes spin{ to{ transform:rotate(360deg);} }
 
-  .eky-hint{
-    color:var(--muted);
-    font-size:13px;
-    margin:12px 2px 0;
-    line-height:1.45;
-  }
-  .eky-demo-flag{
-    display:none;
-    margin-top:12px;
-    padding:9px 12px;
-    background:rgba(245,165,36,.12);
-    border:1px solid rgba(245,165,36,.4);
-    color:#f7c36a;
-    border-radius:10px;
-    font-size:13px;
-  }
-  .eky-demo-flag.show{ display:block; }
+/* ===== confirmation card ===== */
+.eky-confirm, .eky-result, .eky-cta-banner{ display:none; }
+.eky-confirm.show, .eky-result.show, .eky-cta-banner.show{ display:block; }
 
-  /* ---- Result ---- */
-  .eky-result{
-    margin-top:22px;
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    box-shadow:var(--shadow);
-    padding:26px;
-    display:none;
-  }
-  .eky-result.show{ display:block; animation:fadeUp .5s ease; }
-  @keyframes fadeUp{ from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;} }
+.eky-confirm{
+  margin-top:14px;
+  background:var(--panel);
+  border:1px solid var(--accent);
+  border-radius:var(--radius);
+  padding:18px;
+}
+.eky-confirm h2{ margin:0 0 4px; font-weight:700; font-size:20px; }
+.eky-confirm .sub{ color:var(--text-soft); font-size:13.5px; margin:0 0 14px; line-height:1.5; }
 
-  .eky-gauge-wrap{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    text-align:center;
-  }
-  .eky-gauge{ width:280px; max-width:80vw; }
+.eky-candidate{
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  padding:12px 14px;
+  margin-bottom:12px;
+}
+.eky-candidate .ctitle{ font-weight:600; font-size:15px; margin:0 0 2px; }
+.eky-candidate .curl{ color:var(--accent); font-size:13px; word-break:break-all; }
+.eky-candidate .csnip{ color:var(--text-soft); font-size:13px; margin-top:6px; line-height:1.45; }
+.eky-candidate .ckg{
+  display:inline-block; margin-top:8px;
+  background:rgba(110,112,225,.18); color:#cdcfff;
+  font-size:11px; font-weight:700;
+  padding:3px 9px; border-radius:999px;
+  border:1px solid rgba(110,112,225,.5);
+  text-transform:uppercase; letter-spacing:.06em;
+}
 
-  .eky-score-num{
-    font-size:52px;
-    font-weight:800;
-    line-height:1;
-    letter-spacing:-.02em;
-  }
-  .eky-score-unit{ font-size:24px; font-weight:700; color:var(--muted); }
-  .eky-score-label{
-    font-size:18px;
-    font-weight:700;
-    margin-top:6px;
-  }
-  .eky-target{
-    color:var(--muted);
-    font-size:13px;
-    margin-top:8px;
-    word-break:break-word;
-  }
-  .eky-target a{ color:var(--brand); text-decoration:none; }
-  .eky-target a:hover{ text-decoration:underline; }
+.eky-chips{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 14px; }
+.eky-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--panel-2); border:1px solid var(--line);
+  border-radius:999px; padding:5px 11px;
+  font-size:12.5px; font-weight:600; color:var(--text);
+  text-decoration:none;
+}
+.eky-chip:hover{ border-color:var(--accent); }
+.eky-chip .dot{ width:6px; height:6px; background:var(--accent); border-radius:50%; }
 
-  /* signal list */
-  .eky-signals{
-    margin-top:24px;
-    border-top:1px solid var(--border);
-    padding-top:18px;
-  }
-  .eky-signals h3, .eky-tips h3{
-    font-size:13px;
-    text-transform:uppercase;
-    letter-spacing:.1em;
-    color:var(--muted);
-    margin:0 0 12px;
-  }
-  .eky-sig{
-    display:flex;
-    align-items:flex-start;
-    gap:12px;
-    padding:10px 0;
-    border-bottom:1px solid rgba(255,255,255,.04);
-  }
-  .eky-sig:last-child{ border-bottom:none; }
-  .eky-ico{
-    flex:0 0 22px;
-    width:22px; height:22px;
-    border-radius:50%;
-    display:grid; place-items:center;
-    font-size:13px; font-weight:800;
-    margin-top:1px;
-  }
-  .eky-ico.ok{   background:rgba(31,191,117,.16);  color:var(--good); }
-  .eky-ico.part{ background:rgba(245,165,36,.16); color:var(--warn); }
-  .eky-ico.no{   background:rgba(239,74,74,.16);   color:var(--bad); }
-  .eky-sig-body{ flex:1 1 auto; min-width:0; }
-  .eky-sig-name{ font-weight:600; font-size:15px; }
-  .eky-sig-detail{ color:var(--muted); font-size:13px; margin-top:2px; line-height:1.4; }
-  .eky-sig-pts{ flex:0 0 auto; color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.eky-confirm-actions{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+.eky-confirm-actions .row{ display:flex; gap:8px; flex-wrap:wrap; }
+.eky-confirm-actions .grow{ flex:1 1 200px; min-width:0; }
+.eky-confirm-actions input{
+  flex:1 1 220px; min-width:0;
+  height:44px;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  color:var(--text);
+  font-family:inherit; font-size:14px;
+  padding:0 12px;
+}
+.eky-confirm-actions input:focus{ outline:none; border-color:var(--accent); }
 
-  .eky-tips{
-    margin-top:22px;
-    background:var(--panel-2);
-    border:1px solid var(--border);
-    border-radius:12px;
-    padding:16px 18px;
-  }
-  .eky-tips ul{ margin:0; padding-left:18px; }
-  .eky-tips li{ color:#cfd8e3; font-size:14px; line-height:1.55; margin:6px 0; }
+/* ===== result ===== */
+.eky-result{
+  margin-top:16px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px 20px;
+  box-shadow:var(--shadow);
+}
+.eky-result h2{
+  margin:0 0 12px; font-weight:700; font-size:18px;
+  text-align:center;
+  text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-muted);
+}
+.eky-gauge-wrap{ text-align:center; }
+.eky-gauge{ width:260px; max-width:78vw; display:block; margin:0 auto; }
+.eky-score-num{ font-size:48px; font-weight:800; line-height:1; letter-spacing:-.02em; }
+.eky-score-unit{ font-size:20px; font-weight:700; color:var(--text-muted); }
+.eky-score-label{ font-size:17px; font-weight:700; margin-top:6px; }
+.eky-target{
+  color:var(--text-soft); font-size:13px;
+  margin-top:8px; word-break:break-word;
+}
+.eky-target a{ color:var(--accent); text-decoration:none; }
+.eky-target a:hover{ text-decoration:underline; }
+.eky-target .notyours{ display:block; margin-top:4px; font-size:12px; color:var(--text-muted); font-style:italic; }
 
-  .eky-err{
-    margin-top:14px;
-    padding:12px 14px;
-    background:rgba(239,74,74,.1);
-    border:1px solid rgba(239,74,74,.4);
-    color:#ff9b9b;
-    border-radius:10px;
-    font-size:14px;
-    display:none;
-  }
-  .eky-err.show{ display:block; }
+.eky-layers{
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin-top:20px;
+}
+@media (max-width:640px){ .eky-layers{ grid-template-columns:1fr; } }
+.eky-layer{
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  padding:14px 16px;
+}
+.eky-layer h3{
+  font-size:11.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.08em;
+  margin:0 0 8px; color:var(--text-muted);
+  display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+}
+.eky-layer h3 .ltot{ font-size:12px; color:var(--text-soft); letter-spacing:0; text-transform:none; font-weight:600; }
 
-  .eky-foot{
-    text-align:center;
-    color:var(--muted);
-    font-size:12px;
-    margin-top:26px;
-  }
+.eky-sig{
+  display:flex; gap:10px; align-items:flex-start;
+  padding:8px 0;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.eky-sig:last-child{ border-bottom:none; }
+.eky-ico{
+  flex:0 0 20px; width:20px; height:20px;
+  border-radius:50%; display:grid; place-items:center;
+  font-size:12px; font-weight:800;
+  margin-top:1px;
+}
+.eky-ico.ok{   background:rgba(45,187,120,.16);  color:var(--good); }
+.eky-ico.part{ background:rgba(255,205,46,.16); color:var(--mid); }
+.eky-ico.no{   background:rgba(225,76,66,.16);   color:var(--bad); }
+.eky-sig-body{ flex:1 1 auto; min-width:0; }
+.eky-sig-name{ font-weight:600; font-size:13.5px; }
+.eky-sig-detail{ color:var(--text-soft); font-size:12.5px; margin-top:2px; line-height:1.45; }
+.eky-sig-pts{ flex:0 0 auto; font-size:12px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
 
-  /* spinner */
-  .eky-spin{
-    width:18px; height:18px;
-    border:2.5px solid rgba(255,255,255,.4);
-    border-top-color:#fff;
-    border-radius:50%;
-    animation:spin .7s linear infinite;
-  }
-  @keyframes spin{ to{ transform:rotate(360deg);} }
+.eky-tips{
+  margin-top:18px;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  padding:14px 16px;
+}
+.eky-tips h3{
+  font-size:11.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.08em;
+  margin:0 0 6px; color:var(--text-muted);
+}
+.eky-tips ul{ margin:0; padding-left:18px; }
+.eky-tips li{ color:#d6dde6; font-size:13.5px; line-height:1.55; margin:5px 0; }
 
-  @media (max-width:560px){
-    .eky-country, .eky-input-cell{ flex:1 1 100%; }
-    .eky-go{ flex:1 1 100%; justify-content:center; }
-  }
+/* ===== CTA banner ===== */
+.eky-cta-banner{
+  margin-top:14px;
+  background:var(--panel);
+  border:1px solid var(--accent);
+  border-radius:var(--radius);
+  padding:18px 20px;
+  text-align:center;
+}
+.eky-cta-banner .bh{ font-weight:700; font-size:17px; margin:0 0 6px; line-height:1.3; }
+.eky-cta-banner .bh .pop{ color:var(--accent-2); }
+.eky-cta-banner .bs{ color:var(--text-soft); font-size:13.5px; line-height:1.5; margin:0 0 12px; }
+.eky-cta-banner .b3{ display:inline-block; font-size:11.5px; color:var(--text-muted); margin-top:8px; }
+
+/* ===== mobile ===== */
+@media (max-width:560px){
+  .eky-country, .eky-input-cell{ flex:1 1 100%; }
+  .eky-cta{ width:100%; }
+  .eky-card{ padding:16px; }
+  .eky-result{ padding:18px 14px; }
+  .eky-confirm{ padding:16px; }
+}
 </style>
 </head>
 <body>
-<div class="eky-wrap">
-  <div class="eky-card">
+<div class="eky-page">
 
-    <p class="eky-eyebrow">Everybody Knows You</p>
-    <h1 class="eky-title">See how <span class="grad">discoverable</span> you are</h1>
-    <p class="eky-sub">In the age of AI, being findable isn't about ranking #1 on Google — it's about whether assistants can confidently identify and describe you. Run a free check below.</p>
+  <div class="eky-top">
+    <div class="eky-lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" class="on">EN</button>
+      <button type="button" data-lang="es">ES</button>
+    </div>
+  </div>
 
-    <div class="eky-form">
+  <header class="eky-hero">
+    <p class="eky-eyebrow" data-t="eyebrow">In the age of AI</p>
+    <h1 class="eky-title" data-t="title">Right now, does <span class="pop">AI</span> know who you are?</h1>
+    <p class="eky-sub" data-t="sub">Type your name, or paste your website. We'll show you what AI actually sees — and what's missing.</p>
+  </header>
+
+  <div class="eky-wrap">
+
+    <!-- ============ FORM ============ -->
+    <div class="eky-card" id="ekyForm">
       <div class="eky-row">
         <div class="eky-country">
-          <label class="eky-lbl" for="ekyCountry">Country</label>
+          <label class="eky-lbl" for="ekyCountry" data-t="country_label">Where are you?</label>
           <select id="ekyCountry" class="eky-select" aria-label="Country"></select>
         </div>
         <div class="eky-input-cell">
-          <label class="eky-lbl" for="ekyQuery">Your name, business, or website</label>
-          <input id="ekyQuery" class="eky-text" type="text" autocomplete="off"
-                 placeholder="Type in your name" aria-label="Name, business, or website to check" />
+          <label class="eky-lbl" for="ekyQuery" data-t="query_label">Your name, business, or website</label>
+          <input id="ekyQuery" class="eky-text" type="text" autocomplete="off" placeholder="Type your name" />
         </div>
         <div style="display:flex; align-items:flex-end;">
-          <button id="ekyGo" class="eky-go" type="button">
-            <span id="ekyGoLabel">Check</span>
+          <button id="ekyGo" class="eky-cta" type="button">
+            <span id="ekyGoLabel" data-t="check">Check</span>
           </button>
         </div>
       </div>
-      <p class="eky-hint">Tip: paste your exact website URL for the most accurate result, or type a name to let AI find you. Pick your country to avoid being confused with someone who shares your name.</p>
-      <div id="ekyDemoFlag" class="eky-demo-flag">
-        Demo mode — the live analysis engine isn't connected yet, so scores below are illustrative. Once the backend URL is set, results become real.
-      </div>
+      <p class="eky-hint" data-t="hint">Tip: pasting your exact website is the most accurate. A name lets AI find you. Pick your country to help.</p>
+      <div id="ekyErr" class="eky-err" role="alert"></div>
     </div>
 
-    <div id="ekyErr" class="eky-err"></div>
+    <!-- ============ CONFIRMATION CARD ============ -->
+    <section class="eky-confirm" id="ekyConfirm" aria-live="polite">
+      <h2 data-t="confirm_title">Is this you?</h2>
+      <p class="sub" data-t="confirm_sub">We searched and found this. Confirm it's really you — otherwise we'd be measuring the wrong person.</p>
 
-    <div id="ekyResult" class="eky-result">
+      <div id="ekyCandidate" class="eky-candidate" style="display:none">
+        <div class="ctitle" id="ekyCandTitle"></div>
+        <div class="curl" id="ekyCandUrl"></div>
+        <div class="csnip" id="ekyCandSnip"></div>
+        <span class="ckg" id="ekyCandKG" style="display:none" data-t="kg_badge">Google Knowledge Panel</span>
+      </div>
+
+      <div id="ekyProfilesWrap" style="display:none">
+        <p style="margin:0 0 8px; font-weight:600; font-size:14px;" data-t="profiles_seen">AI also sees you on:</p>
+        <div class="eky-chips" id="ekyProfilesChips"></div>
+      </div>
+
+      <div class="eky-confirm-actions">
+        <div class="row">
+          <button id="ekyYes" class="eky-cta grow" type="button"><span data-t="confirm_yes">Yes, that's me</span></button>
+        </div>
+        <div class="row">
+          <input id="ekyMyUrl" type="text" placeholder="https://yoursite.com" />
+          <button id="ekyMyUrlGo" class="eky-cta ghost" type="button"><span data-t="confirm_no_go">Use this URL</span></button>
+        </div>
+        <div class="row">
+          <button id="ekyNoSite" class="eky-cta ghost grow" type="button"><span data-t="confirm_nosite">I don't have a website yet</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RESULT ============ -->
+    <section class="eky-result" id="ekyResult" aria-live="polite">
+      <h2 data-t="result_title">Here's what AI sees</h2>
       <div class="eky-gauge-wrap">
         <svg class="eky-gauge" viewBox="0 0 240 150" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <defs>
             <linearGradient id="ekyArcGrad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%"  stop-color="#ef4a4a"/>
-              <stop offset="50%" stop-color="#f5a524"/>
-              <stop offset="100%" stop-color="#1fbf75"/>
+              <stop offset="0%"  stop-color="#E14C42"/>
+              <stop offset="50%" stop-color="#FFCD2E"/>
+              <stop offset="100%" stop-color="#2DBB78"/>
             </linearGradient>
           </defs>
-          <!-- track -->
-          <path d="M 20 130 A 100 100 0 0 1 220 130" fill="none" stroke="#2a323d" stroke-width="18" stroke-linecap="round"/>
-          <!-- value arc -->
+          <path d="M 20 130 A 100 100 0 0 1 220 130" fill="none" stroke="#2c333e" stroke-width="18" stroke-linecap="round"/>
           <path id="ekyArc" d="M 20 130 A 100 100 0 0 1 220 130" fill="none" stroke="url(#ekyArcGrad)" stroke-width="18" stroke-linecap="round"
                 stroke-dasharray="314.159" stroke-dashoffset="314.159" style="transition:stroke-dashoffset 1.2s cubic-bezier(.22,1,.36,1);"/>
-          <!-- needle -->
           <g id="ekyNeedle" style="transition:transform 1.2s cubic-bezier(.22,1,.36,1); transform-origin:120px 130px; transform:rotate(-90deg);">
-            <line x1="120" y1="130" x2="120" y2="48" stroke="#eef2f7" stroke-width="4" stroke-linecap="round"/>
+            <line x1="120" y1="130" x2="120" y2="48" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
           </g>
-          <circle cx="120" cy="130" r="8" fill="#eef2f7"/>
+          <circle cx="120" cy="130" r="8" fill="#fff"/>
         </svg>
-        <div>
-          <span id="ekyScoreNum" class="eky-score-num">0</span><span class="eky-score-unit">%</span>
-        </div>
+        <div><span id="ekyScoreNum" class="eky-score-num">0</span><span class="eky-score-unit">%</span></div>
         <div id="ekyScoreLabel" class="eky-score-label">&nbsp;</div>
         <div id="ekyTarget" class="eky-target"></div>
       </div>
 
-      <div class="eky-signals">
-        <h3>What we checked</h3>
-        <div id="ekySignals"></div>
+      <div class="eky-layers">
+        <div class="eky-layer">
+          <h3><span data-t="layer_a">Where AI finds you</span><span class="ltot" id="ekyLayerATot">0 / 45</span></h3>
+          <div id="ekyLayerASigs"></div>
+        </div>
+        <div class="eky-layer">
+          <h3><span data-t="layer_b">Your own hub</span><span class="ltot" id="ekyLayerBTot">0 / 55</span></h3>
+          <div id="ekyLayerBSigs"></div>
+        </div>
       </div>
 
       <div class="eky-tips">
-        <h3>How to improve</h3>
+        <h3 data-t="how_to_improve">How to improve</h3>
         <ul id="ekyTips"></ul>
       </div>
-    </div>
+    </section>
 
-    <p class="eky-foot">A free check by everybodyknowsyou.com — helping people, projects, and brands become understandable to AI.</p>
+    <!-- ============ CTA BANNER (sells the 3-day site) ============ -->
+    <section class="eky-cta-banner" id="ekyCtaBanner">
+      <div class="bh" data-t="cta_h"></div>
+      <div class="bs" data-t="cta_s"></div>
+      <a id="ekyCtaLink" class="eky-cta" href="/" data-t="cta_btn">Build my website →</a>
+      <div class="b3" data-t="cta_meta">Ready in 3 days · From $500 · In Spanish and English</div>
+    </section>
+
+    <p style="text-align:center; color:var(--text-muted); font-size:12px; margin-top:30px;" data-t="footer">
+      A free check by Everybody Knows You · helping people, projects and brands be understood by AI.
+    </p>
   </div>
 </div>
 
 <script>
-/* =================================================================
+/* ============================================================
    CONFIG
-   -----------------------------------------------------------------
-   ENDPOINT_URL is wired to this site's own Cloudflare Function at
-   /api/score (same domain = no CORS). Leave it as "/api/score".
-   (Set to "" only if you want to preview the illustrative DEMO mode.)
-   ================================================================= */
+   ============================================================ */
 const CONFIG = {
   ENDPOINT_URL: "/api/score",
-  REQUEST_TIMEOUT_MS: 25000  // give the backend time to fetch + analyse
+  REQUEST_TIMEOUT_MS: 30000,
+  HOMESITE_URL: "/" /* link target for the "Build my website" CTA — when integrated natively this stays "/" */
 };
 
-/* ---- rotating placeholder ---- */
-const PLACEHOLDERS = [
-  "Type in your name",
-  "Type in your project",
-  "Type in your book",
-  "Type in your company",
-  "Type in your brand",
-  "Type in your community",
-  "...or paste your website URL"
-];
-
-/* ---- countries (ISO code + name); El Salvador default ---- */
+/* ============================================================
+   COUNTRIES
+   ============================================================ */
 const COUNTRIES = [
   ["SV","El Salvador"],["US","United States"],["MX","Mexico"],["GT","Guatemala"],
   ["HN","Honduras"],["NI","Nicaragua"],["CR","Costa Rica"],["PA","Panama"],
@@ -424,259 +475,652 @@ const COUNTRIES = [
   ["ZA","South Africa"],
   ["__","Worldwide / no preference"]
 ];
+const COUNTRIES_ES = {
+  "SV":"El Salvador","US":"Estados Unidos","MX":"México","GT":"Guatemala","HN":"Honduras","NI":"Nicaragua",
+  "CR":"Costa Rica","PA":"Panamá","CO":"Colombia","AR":"Argentina","CL":"Chile","PE":"Perú","EC":"Ecuador",
+  "VE":"Venezuela","BO":"Bolivia","PY":"Paraguay","UY":"Uruguay","BR":"Brasil","DO":"República Dominicana",
+  "CU":"Cuba","PR":"Puerto Rico","ES":"España","PT":"Portugal","FR":"Francia","DE":"Alemania","IT":"Italia",
+  "GB":"Reino Unido","IE":"Irlanda","NL":"Países Bajos","BE":"Bélgica","CH":"Suiza","AT":"Austria",
+  "SE":"Suecia","NO":"Noruega","DK":"Dinamarca","FI":"Finlandia","PL":"Polonia","CZ":"Chequia","GR":"Grecia",
+  "RO":"Rumanía","CA":"Canadá","AU":"Australia","NZ":"Nueva Zelanda","IN":"India","PK":"Pakistán",
+  "BD":"Bangladés","PH":"Filipinas","ID":"Indonesia","MY":"Malasia","SG":"Singapur","TH":"Tailandia",
+  "VN":"Vietnam","JP":"Japón","KR":"Corea del Sur","CN":"China","HK":"Hong Kong","TW":"Taiwán",
+  "AE":"Emiratos Árabes Unidos","SA":"Arabia Saudita","IL":"Israel","TR":"Turquía","EG":"Egipto",
+  "MA":"Marruecos","NG":"Nigeria","KE":"Kenia","GH":"Ghana","ZA":"Sudáfrica","__":"En todo el mundo"
+};
 
-/* ---- scoring rubric (must match backend) ---- */
-const RUBRIC = [
-  ["llms_txt",        "AI guide file (llms.txt)",                  22],
-  ["structured_data", "Structured data (Schema.org / JSON-LD)",    20],
-  ["identity_clarity","Clear, single identity",                    14],
-  ["meta_seo",        "Page basics (title, description, Open Graph)",12],
-  ["identity_graph",  "Linked profiles (sameAs)",                  10],
-  ["crawlability",    "Crawlable (robots.txt + sitemap)",          10],
-  ["secure_indexable","Secure & indexable (HTTPS, no noindex)",     7],
-  ["canonical_entity","Canonical URL & matching name",             5]
-];
+/* ============================================================
+   STRINGS (bilingual)
+   ============================================================ */
+const STRINGS = {
+  en: {
+    eyebrow: "In the age of AI",
+    title:   'Right now, does <span class="pop">AI</span> know who you are?',
+    sub:     "Type your name, or paste your website. We'll show you what AI actually sees — and what's missing.",
+    country_label: "Where are you?",
+    query_label:   "Your name, business, or website",
+    check:   "Check",
+    hint:    "Tip: pasting your exact website is the most accurate. A name lets AI find you. Pick your country to help.",
+    placeholders: ["Type your name","Type your business","Type your project","Type your book","Type your brand","Type your community","...or paste your website"],
+    searching: "Looking you up...",
+    confirm_title: "Is this you?",
+    confirm_sub:   "We searched and found this. Confirm it's really you — otherwise we'd be measuring the wrong person.",
+    confirm_yes:   "Yes, that's me",
+    confirm_no_go: "Use this URL",
+    confirm_nosite:"I don't have a website yet",
+    confirm_no_placeholder: "https://yoursite.com",
+    profiles_seen: "AI also sees you on:",
+    kg_badge:      "Google Knowledge Panel",
+    result_title:  "Here's what AI sees",
+    layer_a:       "Where AI finds you",
+    layer_b:       "Your own hub",
+    how_to_improve:"How to improve",
+    cta_h:         'Want to be at <span class="pop">100%</span> in 3 days?',
+    cta_s:         "We build the website that makes AI tell your story exactly the way you want.",
+    cta_btn:       "Build me my website →",
+    cta_meta:      "Ready in 3 days · From $500 · In Spanish and English",
+    footer:        "A free check by Everybody Knows You · helping people, projects and brands be understood by AI.",
+    bands: {
+      excellent: "AI knows you cold.",
+      high:      "AI mostly gets you right.",
+      mid:       "AI sort of finds you.",
+      low:       "AI struggles to see you."
+    },
+    target_analysed: "Analysed:",
+    target_notyours: "Not you? Click \"No — my site is...\" above.",
+    target_matches: (n) => "We found ~" + n + " possible matches for this name. AI may confuse you with someone else.",
+    err_empty: "Type your name, business, or website first.",
+    err_url:   "That URL doesn't look right.",
+    err_timeout: "That took too long. Try again.",
+    err_generic: "Something went wrong. Try again in a moment.",
+    err_unreachable: "We couldn't reach that website. Check the address and try again.",
+    err_nocandidate_title: "We couldn't auto-find your website",
+    err_nocandidate_sub: "But here's where AI sees you. Paste your URL below — or say you don't have one yet.",
+    sig: {
+      kg:          "Google Knowledge Panel",
+      profiles:    "AI sees your profiles",
+      clarity:     "Clear, single identity",
+      site:        "Your own website",
+      llms:        "AI guide file (llms.txt)",
+      schema:      "Schema.org structured data",
+      sameas_xref: "Site links match AI's profiles",
+      basics:      "Page basics, canonical, secure, crawlable"
+    },
+    detail: {
+      kg_full:    "AI has a Knowledge Panel for you.",
+      kg_none:    "No Knowledge Panel yet — AI isn't sure who you are.",
+      profiles_full: (n,p) => "AI sees you on " + n + " platforms: " + p.join(", ") + ".",
+      profiles_partial: (n,p) => "AI sees you on " + n + " platform" + (n===1?"":"s") + ": " + p.join(", ") + ".",
+      profiles_none: "AI doesn't see any clear profiles for you.",
+      clarity_full:    "One clear, dominant match for this name.",
+      clarity_partial: "A few possible matches — some ambiguity for AI.",
+      clarity_none:    "Many people share this name; AI may confuse you.",
+      site_full:    "Your site responds and is reachable.",
+      site_partial: "Your site responds, but oddly.",
+      site_none:    "Your site couldn't be reached.",
+      llms_full:    "llms.txt is present and substantial.",
+      llms_partial: "llms.txt is present but thin.",
+      llms_none:    "No llms.txt — AI has no purpose-built summary of you.",
+      schema_full: (t) => "Rich Schema.org entity (" + t.join(", ") + ").",
+      schema_partial: "Some Schema.org markup, but missing key fields.",
+      schema_none: "No Schema.org JSON-LD found.",
+      sameas_full: (n) => n + " of your sameAs links match the profiles AI found.",
+      sameas_partial_with: "Only 1 sameAs link matches AI's profiles.",
+      sameas_partial_blind: "You declare sameAs links, but we couldn't cross-verify them with AI's search.",
+      sameas_none: "No sameAs links cross-verify your identity to AI.",
+      basics_full: "Title, description, OG, canonical, HTTPS, crawlable — all good.",
+      basics_partial: "Some basics are in place, some missing.",
+      basics_none: "Title, meta, canonical, OG mostly missing."
+    },
+    tips: {
+      llms:    "Add an /llms.txt — a short plain-text page telling AI assistants who you are, what you do, and links to your key pages.",
+      schema:  "Add Schema.org JSON-LD (Person or Organization) on your homepage with name, description, image and sameAs.",
+      sameas:  "List your real profiles (LinkedIn, Wikipedia, social, press) in sameAs on your homepage — this is the link AI uses to confirm you're you.",
+      basics:  "Set a clear title, meta description, Open Graph image, canonical URL, HTTPS, and allow crawlers.",
+      profiles:"Build a stronger online presence — at minimum LinkedIn + one social + one bio site.",
+      clarity: "Use your full unique name everywhere, and link every profile back to your owned site.",
+      site:    "Get your own website — without one, AI has no canonical place to learn who you are.",
+      kg:      "Knowledge Panels build over time from consistent, cross-verified online presence — keep posting and linking."
+    }
+  },
+  es: {
+    eyebrow: "En la era de la IA",
+    title:   '¿La <span class="pop">IA</span> sabe quién eres ahora mismo?',
+    sub:     "Escribe tu nombre o pega tu sitio web. Te mostramos lo que la IA realmente ve — y lo que falta.",
+    country_label: "¿Dónde estás?",
+    query_label:   "Tu nombre, negocio o sitio web",
+    check:   "Revisar",
+    hint:    "Tip: pegar tu sitio es lo más preciso. Un nombre permite que la IA te busque. Elige tu país para ayudar.",
+    placeholders: ["Escribe tu nombre","Escribe tu negocio","Escribe tu proyecto","Escribe tu libro","Escribe tu marca","Escribe tu comunidad","...o pega tu sitio web"],
+    searching: "Buscándote...",
+    confirm_title: "¿Eres tú?",
+    confirm_sub:   "Buscamos y encontramos esto. Confírmanos que eres tú — si no, mediríamos a otra persona.",
+    confirm_yes:   "Sí, soy yo",
+    confirm_no_go: "Usar este URL",
+    confirm_nosite:"Aún no tengo sitio web",
+    confirm_no_placeholder: "https://tusitio.com",
+    profiles_seen: "La IA también te ve en:",
+    kg_badge:      "Panel de Google",
+    result_title:  "Esto es lo que la IA ve",
+    layer_a:       "Dónde te encuentra la IA",
+    layer_b:       "Tu propio sitio",
+    how_to_improve:"Cómo mejorar",
+    cta_h:         '¿Quieres estar al <span class="pop">100%</span> en 3 días?',
+    cta_s:         "Construimos el sitio que hace que la IA cuente tu historia exactamente como tú quieres.",
+    cta_btn:       "Construir mi sitio web →",
+    cta_meta:      "Listo en 3 días · Desde $500 · En español e inglés",
+    footer:        "Una revisión gratis de Everybody Knows You · ayudando a personas, proyectos y marcas a ser entendidos por la IA.",
+    bands: {
+      excellent: "La IA te conoce perfectamente.",
+      high:      "La IA te entiende bastante bien.",
+      mid:       "La IA te encuentra a medias.",
+      low:       "A la IA le cuesta verte."
+    },
+    target_analysed: "Analizamos:",
+    target_notyours: "¿No eres tú? Pulsa \"No — mi sitio es...\" arriba.",
+    target_matches: (n) => "Encontramos ~" + n + " posibles coincidencias para este nombre. La IA podría confundirte con otra persona.",
+    err_empty: "Escribe primero tu nombre, negocio o sitio.",
+    err_url:   "Ese URL no parece correcto.",
+    err_timeout: "Tardó demasiado. Inténtalo de nuevo.",
+    err_generic: "Algo salió mal. Inténtalo en un momento.",
+    err_unreachable: "No pudimos llegar a ese sitio. Verifica la dirección e intenta de nuevo.",
+    err_nocandidate_title: "No pudimos encontrar tu sitio automáticamente",
+    err_nocandidate_sub: "Pero esto es lo que la IA ve de ti. Pega tu URL abajo — o dinos que aún no tienes uno.",
+    sig: {
+      kg:          "Panel de Google",
+      profiles:    "La IA ve tus perfiles",
+      clarity:     "Identidad clara y única",
+      site:        "Tu propio sitio",
+      llms:        "Archivo guía para IA (llms.txt)",
+      schema:      "Datos estructurados (Schema.org)",
+      sameas_xref: "Los enlaces del sitio coinciden con los perfiles",
+      basics:      "Básicos de página, canónico, seguro, rastreable"
+    },
+    detail: {
+      kg_full:    "La IA tiene un Panel de Google para ti.",
+      kg_none:    "Sin Panel de Google aún — la IA no está segura de quién eres.",
+      profiles_full: (n,p) => "La IA te ve en " + n + " plataformas: " + p.join(", ") + ".",
+      profiles_partial: (n,p) => "La IA te ve en " + n + " plataforma" + (n===1?"":"s") + ": " + p.join(", ") + ".",
+      profiles_none: "La IA no encuentra perfiles claros tuyos.",
+      clarity_full:    "Una coincidencia clara y dominante para este nombre.",
+      clarity_partial: "Algunas coincidencias posibles — hay algo de ambigüedad.",
+      clarity_none:    "Muchas personas comparten este nombre; la IA puede confundirte.",
+      site_full:    "Tu sitio responde y es accesible.",
+      site_partial: "Tu sitio responde, pero raro.",
+      site_none:    "No pudimos llegar a tu sitio.",
+      llms_full:    "llms.txt presente y sustancial.",
+      llms_partial: "llms.txt presente pero corto.",
+      llms_none:    "Sin llms.txt — la IA no tiene un resumen hecho para ella.",
+      schema_full: (t) => "Entidad Schema.org rica (" + t.join(", ") + ").",
+      schema_partial: "Algo de Schema.org, pero faltan campos clave.",
+      schema_none: "Sin JSON-LD de Schema.org.",
+      sameas_full: (n) => n + " de tus enlaces sameAs coinciden con los perfiles que ve la IA.",
+      sameas_partial_with: "Solo 1 enlace sameAs coincide con los perfiles.",
+      sameas_partial_blind: "Declaras sameAs, pero no pudimos cruzar la verificación con la búsqueda.",
+      sameas_none: "Ningún sameAs verifica tu identidad ante la IA.",
+      basics_full: "Título, descripción, OG, canónico, HTTPS, rastreable — todo bien.",
+      basics_partial: "Algunos básicos sí, otros faltan.",
+      basics_none: "Faltan título, meta, canónico, OG."
+    },
+    tips: {
+      llms:    "Agrega un /llms.txt — una página corta de texto que dice a la IA quién eres, qué haces, y enlaza a tus páginas clave.",
+      schema:  "Agrega Schema.org JSON-LD (Person u Organization) en tu portada con nombre, descripción, imagen y sameAs.",
+      sameas:  "Lista tus perfiles reales (LinkedIn, Wikipedia, redes, prensa) en sameAs — así la IA confirma que eres tú.",
+      basics:  "Pon título claro, meta descripción, imagen Open Graph, URL canónica, HTTPS, y permite a los rastreadores.",
+      profiles:"Construye más presencia — al menos LinkedIn + una red + un sitio bio.",
+      clarity: "Usa tu nombre completo único en todas partes, y enlaza cada perfil de vuelta a tu sitio propio.",
+      site:    "Crea tu sitio — sin uno, la IA no tiene un lugar canónico para saber quién eres.",
+      kg:      "Los Paneles de Google se construyen con presencia consistente y cruzada — sigue publicando y enlazando."
+    }
+  }
+};
 
-/* ===================== UI wiring ===================== */
+/* ============================================================
+   STATE + DOM
+   ============================================================ */
+let LANG = (function(){
+  try { const stored = localStorage.getItem("eky_lang"); if (stored === "en" || stored === "es") return stored; } catch (e) {}
+  const nav = (navigator.language || "en").toLowerCase();
+  return nav.startsWith("es") ? "es" : "en";
+})();
+
 const $ = (id) => document.getElementById(id);
-const elCountry = $("ekyCountry"), elQuery = $("ekyQuery"), elGo = $("ekyGo"),
-      elGoLabel = $("ekyGoLabel"), elResult = $("ekyResult"), elErr = $("ekyErr"),
-      elArc = $("ekyArc"), elNeedle = $("ekyNeedle"), elScoreNum = $("ekyScoreNum"),
-      elScoreLabel = $("ekyScoreLabel"), elTarget = $("ekyTarget"),
-      elSignals = $("ekySignals"), elTips = $("ekyTips"), elDemoFlag = $("ekyDemoFlag");
+const elCountry  = $("ekyCountry");
+const elQuery    = $("ekyQuery");
+const elGo       = $("ekyGo");
+const elGoLabel  = $("ekyGoLabel");
+const elErr      = $("ekyErr");
+const elForm     = $("ekyForm");
+const elConfirm  = $("ekyConfirm");
+const elCandidate= $("ekyCandidate");
+const elCandTitle= $("ekyCandTitle");
+const elCandUrl  = $("ekyCandUrl");
+const elCandSnip = $("ekyCandSnip");
+const elCandKG   = $("ekyCandKG");
+const elProfilesWrap = $("ekyProfilesWrap");
+const elProfilesChips = $("ekyProfilesChips");
+const elYes      = $("ekyYes");
+const elMyUrl    = $("ekyMyUrl");
+const elMyUrlGo  = $("ekyMyUrlGo");
+const elNoSite   = $("ekyNoSite");
+const elResult   = $("ekyResult");
+const elArc      = $("ekyArc");
+const elNeedle   = $("ekyNeedle");
+const elScoreNum = $("ekyScoreNum");
+const elScoreLabel = $("ekyScoreLabel");
+const elTarget   = $("ekyTarget");
+const elLayerATot= $("ekyLayerATot");
+const elLayerBTot= $("ekyLayerBTot");
+const elLayerASigs = $("ekyLayerASigs");
+const elLayerBSigs = $("ekyLayerBSigs");
+const elTips     = $("ekyTips");
+const elCtaBanner= $("ekyCtaBanner");
+const elCtaLink  = $("ekyCtaLink");
+const ARC_LEN = 314.159;
 
-const ARC_LEN = 314.159; // length of the semicircle path
+/* discovered state (carried between calls) */
+let discovered = { candidate:null, profiles:[], matches:1 };
 
-// build country dropdown
-COUNTRIES.forEach(([code,name])=>{
-  const o = document.createElement("option");
-  o.value = code; o.textContent = name;
-  if(code === "SV") o.selected = true;
-  elCountry.appendChild(o);
-});
-
-// demo flag
-const DEMO = !CONFIG.ENDPOINT_URL;
-if(DEMO) elDemoFlag.classList.add("show");
-
-// rotating placeholder (only while empty & not focused)
-let phIndex = 0, phTimer = null;
-function startPlaceholder(){
-  stopPlaceholder();
-  phTimer = setInterval(()=>{
-    if(document.activeElement === elQuery || elQuery.value) return;
-    phIndex = (phIndex + 1) % PLACEHOLDERS.length;
-    elQuery.placeholder = PLACEHOLDERS[phIndex];
-  }, 2200);
+/* ============================================================
+   I18N
+   ============================================================ */
+function applyLang() {
+  document.documentElement.lang = LANG;
+  const t = STRINGS[LANG];
+  // simple data-t replacements
+  document.querySelectorAll("[data-t]").forEach(el => {
+    const key = el.getAttribute("data-t");
+    if (t[key] !== undefined && typeof t[key] === "string") {
+      if (t[key].indexOf("<") >= 0) el.innerHTML = t[key];
+      else el.textContent = t[key];
+    }
+  });
+  // form bits
+  elQuery.placeholder = t.placeholders[0];
+  elMyUrl.placeholder = t.confirm_no_placeholder;
+  // language buttons
+  document.querySelectorAll(".eky-lang button").forEach(b => {
+    b.classList.toggle("on", b.dataset.lang === LANG);
+  });
+  // re-render country options labels
+  buildCountries();
+  // CTA banner copy (uses HTML)
+  document.querySelector('[data-t="cta_h"]').innerHTML = t.cta_h;
+  elCtaLink.textContent = t.cta_btn;
 }
-function stopPlaceholder(){ if(phTimer) clearInterval(phTimer); }
-startPlaceholder();
-
-elQuery.addEventListener("keydown", e=>{ if(e.key === "Enter") runCheck(); });
-elGo.addEventListener("click", runCheck);
-
-/* ===================== core ===================== */
-function setLoading(on){
-  elGo.disabled = on;
-  elGoLabel.innerHTML = on ? '<span class="eky-spin"></span>' : "Check";
-}
-function showError(msg){ elErr.textContent = msg; elErr.classList.add("show"); }
-function clearError(){ elErr.classList.remove("show"); }
-
-function bandLabel(score){
-  if(score >= 90) return ["Excellent — AI knows exactly who you are", "var(--good)"];
-  if(score >= 70) return ["Highly discoverable", "var(--good)"];
-  if(score >= 40) return ["Partially discoverable", "var(--warn)"];
-  return ["Hard for AI to find you", "var(--bad)"];
-}
-
-function renderScore(score){
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  // arc
-  elArc.style.strokeDashoffset = ARC_LEN * (1 - score/100);
-  // needle: -90deg at 0, +90deg at 100
-  elNeedle.style.transform = "rotate(" + (-90 + score*1.8) + "deg)";
-  // count up
-  const [label, color] = bandLabel(score);
-  elScoreLabel.textContent = label;
-  elScoreLabel.style.color = color;
-  let cur = 0;
-  const step = Math.max(1, Math.round(score/40));
-  const t = setInterval(()=>{
-    cur += step; if(cur >= score){ cur = score; clearInterval(t); }
-    elScoreNum.textContent = cur;
-  }, 28);
-}
-
-function iconClass(found){
-  if(found === true || found === "full") return ["ok","✓"];
-  if(found === "partial") return ["part","~"];
-  return ["no","✕"];
-}
-
-function renderSignals(signals){
-  elSignals.innerHTML = "";
-  signals.forEach(s=>{
-    const [cls,glyph] = iconClass(s.found);
-    const row = document.createElement("div");
-    row.className = "eky-sig";
-    row.innerHTML =
-      '<div class="eky-ico '+cls+'">'+glyph+'</div>'+
-      '<div class="eky-sig-body">'+
-        '<div class="eky-sig-name">'+escapeHtml(s.label)+'</div>'+
-        (s.detail ? '<div class="eky-sig-detail">'+escapeHtml(s.detail)+'</div>' : '')+
-      '</div>'+
-      '<div class="eky-sig-pts">'+s.points+'/'+s.max+'</div>';
-    elSignals.appendChild(row);
+function buildCountries() {
+  const prev = elCountry.value || "SV";
+  elCountry.innerHTML = "";
+  COUNTRIES.forEach(([code,nameEn]) => {
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = LANG === "es" ? (COUNTRIES_ES[code] || nameEn) : nameEn;
+    if (code === prev) o.selected = true;
+    elCountry.appendChild(o);
   });
 }
 
-function renderTips(tips){
-  elTips.innerHTML = "";
-  (tips && tips.length ? tips : ["You're in great shape — keep your structured data and llms.txt up to date."])
-    .forEach(t=>{ const li=document.createElement("li"); li.textContent=t; elTips.appendChild(li); });
-}
+/* language toggle */
+document.querySelectorAll(".eky-lang button").forEach(b => {
+  b.addEventListener("click", () => {
+    LANG = b.dataset.lang;
+    try { localStorage.setItem("eky_lang", LANG); } catch (e) {}
+    applyLang();
+  });
+});
 
-function renderTarget(data){
-  if(data.resolvedUrl){
-    let extra = "";
-    if(typeof data.matches === "number" && data.matches > 1){
-      extra = ' · we found ~'+data.matches+' possible matches for this name — AI may confuse you with someone else';
-    }
-    elTarget.innerHTML = 'Analysed: <a href="'+escapeAttr(data.resolvedUrl)+'" target="_blank" rel="noopener">'+escapeHtml(data.resolvedUrl)+'</a>'+escapeHtml(extra);
+/* ============================================================
+   PLACEHOLDER ROTATION
+   ============================================================ */
+let phIndex = 0;
+setInterval(() => {
+  if (document.activeElement === elQuery || elQuery.value) return;
+  const list = STRINGS[LANG].placeholders;
+  phIndex = (phIndex + 1) % list.length;
+  elQuery.placeholder = list[phIndex];
+}, 2200);
+
+/* ============================================================
+   ACTIONS
+   ============================================================ */
+elGo.addEventListener("click", startCheck);
+elQuery.addEventListener("keydown", e => { if (e.key === "Enter") startCheck(); });
+elYes.addEventListener("click", () => {
+  if (!discovered.candidate || !discovered.candidate.url) return;
+  runAudit({ confirmedUrl: discovered.candidate.url });
+});
+elMyUrlGo.addEventListener("click", () => {
+  const u = elMyUrl.value.trim();
+  if (!u) { showError(STRINGS[LANG].err_url); return; }
+  runAudit({ confirmedUrl: u });
+});
+elNoSite.addEventListener("click", () => runNoSite());
+
+function clearAll() {
+  hide(elConfirm); hide(elResult); hide(elCtaBanner);
+  clearError();
+}
+function hide(el){ el.classList.remove("show"); }
+function show(el){ el.classList.add("show"); }
+function setLoading(on, btn){
+  (btn || elGo).disabled = on;
+  const lbl = btn ? btn.querySelector("span") : elGoLabel;
+  if (!lbl) return;
+  if (on) {
+    if (!lbl.dataset.orig) lbl.dataset.orig = lbl.textContent;
+    lbl.innerHTML = '<span class="eky-spin"></span>';
   } else {
-    elTarget.textContent = data.note || "";
+    if (lbl.dataset.orig) lbl.textContent = lbl.dataset.orig;
   }
 }
+function showError(msg) { elErr.textContent = msg; elErr.classList.add("show"); }
+function clearError() { elErr.classList.remove("show"); elErr.textContent = ""; }
 
-function showResult(data){
-  renderScore(data.score);
-  renderSignals(data.signals || []);
-  renderTips(data.tips);
-  renderTarget(data);
-  elResult.classList.add("show");
-  elResult.scrollIntoView({behavior:"smooth", block:"start"});
+/* ============================================================
+   API
+   ============================================================ */
+async function call(body) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), CONFIG.REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(CONFIG.ENDPOINT_URL, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal
+    });
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    return data;
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error(STRINGS[LANG].err_timeout);
+    throw e;
+  } finally { clearTimeout(to); }
 }
 
-async function runCheck(){
+/* ============================================================
+   FLOW: start
+   ============================================================ */
+async function startCheck() {
   const query = elQuery.value.trim();
-  clearError();
-  if(!query){ showError("Please type your name, business, or website first."); return; }
+  clearAll();
+  if (!query) { showError(STRINGS[LANG].err_empty); return; }
 
   setLoading(true);
-  const payload = {
-    query,
-    country: elCountry.value,
-    countryName: elCountry.options[elCountry.selectedIndex].text
-  };
-
-  try{
-    let data;
-    if(DEMO){
-      data = await demoScore(payload);
+  try {
+    const data = await call({
+      query,
+      country: elCountry.value,
+      countryName: elCountry.options[elCountry.selectedIndex].text
+    });
+    if (data.stage === "result") {
+      renderResult(data);
+    } else if (data.stage === "needs_confirmation") {
+      renderConfirm(data);
     } else {
-      data = await callBackend(payload);
+      throw new Error(STRINGS[LANG].err_generic);
     }
-    showResult(data);
-  }catch(err){
-    showError(err && err.message ? err.message : "Something went wrong running the check. Please try again.");
-  }finally{
+  } catch (e) {
+    showError(e.message || STRINGS[LANG].err_generic);
+  } finally {
     setLoading(false);
   }
 }
 
-async function callBackend(payload){
-  const ctrl = new AbortController();
-  const to = setTimeout(()=>ctrl.abort(), CONFIG.REQUEST_TIMEOUT_MS);
-  try{
-    const res = await fetch(CONFIG.ENDPOINT_URL, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify(payload),
-      signal: ctrl.signal
+/* ============================================================
+   FLOW: confirm card
+   ============================================================ */
+function renderConfirm(data) {
+  discovered = { candidate: data.candidate, profiles: data.profiles || [], matches: data.matches || 1 };
+
+  // candidate
+  if (data.candidate && data.candidate.url) {
+    elCandidate.style.display = "block";
+    elCandTitle.textContent = data.candidate.title || data.candidate.url;
+    elCandUrl.textContent = data.candidate.url;
+    elCandSnip.textContent = data.candidate.snippet || "";
+    elCandKG.style.display = data.candidate.source === "knowledgeGraph" ? "inline-block" : "none";
+    elYes.style.display = "inline-flex";
+  } else {
+    elCandidate.style.display = "none";
+    elYes.style.display = "none";
+  }
+
+  // profiles
+  const profs = data.profiles || [];
+  if (profs.length) {
+    elProfilesWrap.style.display = "block";
+    elProfilesChips.innerHTML = "";
+    profs.forEach(p => {
+      const a = document.createElement("a");
+      a.className = "eky-chip"; a.href = p.url; a.target = "_blank"; a.rel = "noopener";
+      a.innerHTML = '<span class="dot"></span>' + escapeHtml(prettyPlatform(p.platform));
+      elProfilesChips.appendChild(a);
     });
-    if(!res.ok){ throw new Error("The analysis service returned an error ("+res.status+"). Please try again shortly."); }
-    const data = await res.json();
-    if(data && data.error){ throw new Error(data.error); }
-    if(typeof data.score !== "number"){ throw new Error("Unexpected response from the analysis service."); }
-    return data;
-  }catch(e){
-    if(e.name === "AbortError"){ throw new Error("The check took too long. Please try again."); }
-    throw e;
-  }finally{ clearTimeout(to); }
+  } else {
+    elProfilesWrap.style.display = "none";
+  }
+
+  show(elConfirm);
+  elConfirm.scrollIntoView({ behavior:"smooth", block:"start" });
 }
 
-/* ===================== DEMO scoring (illustrative only) =====================
-   Only runs if ENDPOINT_URL is blank. Kept so the page can be previewed
-   without a backend. The live backend replaces this entirely. */
-function hash(str){ let h=0; for(let i=0;i<str.length;i++){ h=(h*31 + str.charCodeAt(i))|0; } return Math.abs(h); }
+async function runAudit({ confirmedUrl }) {
+  setLoading(true, elMyUrlGo);
+  setLoading(true, elYes);
+  clearError();
+  try {
+    const data = await call({
+      mode: "audit",
+      query: elQuery.value.trim(),
+      confirmedUrl,
+      country: elCountry.value,
+      countryName: elCountry.options[elCountry.selectedIndex].text,
+      profiles: discovered.profiles,
+      matches: discovered.matches
+    });
+    if (data.stage !== "result") throw new Error(STRINGS[LANG].err_generic);
+    renderResult(data);
+    hide(elConfirm);
+  } catch (e) {
+    showError(e.message || STRINGS[LANG].err_generic);
+  } finally {
+    setLoading(false, elMyUrlGo);
+    setLoading(false, elYes);
+  }
+}
 
-async function demoScore(payload){
-  await new Promise(r=>setTimeout(r, 1100)); // simulate network/analysis
-  const q = payload.query.toLowerCase();
-  const isUrl = /^https?:\/\//.test(q) || /\.[a-z]{2,}($|\/)/.test(q);
+async function runNoSite() {
+  setLoading(true, elNoSite);
+  clearError();
+  try {
+    const data = await call({
+      mode: "no_site",
+      query: elQuery.value.trim(),
+      country: elCountry.value,
+      countryName: elCountry.options[elCountry.selectedIndex].text,
+      profiles: discovered.profiles,
+      matches: discovered.matches
+    });
+    renderResult(data);
+    hide(elConfirm);
+  } catch (e) {
+    showError(e.message || STRINGS[LANG].err_generic);
+  } finally {
+    setLoading(false, elNoSite);
+  }
+}
 
-  // showcase: an optimised identity scores high
-  const showcase = q.includes("nelson inno") || q.includes("everybodyknowsyou") || q.includes("everybody knows you");
+/* ============================================================
+   RENDER: result + gauge + breakdown + CTA banner
+   ============================================================ */
+function bandText(score) {
+  const b = STRINGS[LANG].bands;
+  if (score >= 90) return b.excellent;
+  if (score >= 70) return b.high;
+  if (score >= 40) return b.mid;
+  return b.low;
+}
 
-  const seed = hash(q + payload.country);
-  const found = {};
-  RUBRIC.forEach(([id], i)=>{
-    if(showcase){ found[id] = (id==="identity_clarity"||id==="canonical_entity") ? true : true; }
-    else{
-      const r = (seed >> i) & 3; // 0..3
-      found[id] = r===0 ? false : (r===1 ? "partial" : true);
+function renderResult(data) {
+  const score = Math.max(0, Math.min(100, Math.round(data.score || 0)));
+  // arc + needle
+  elArc.style.strokeDashoffset = ARC_LEN * (1 - score/100);
+  elNeedle.style.transform = "rotate(" + (-90 + score * 1.8) + "deg)";
+  // count up
+  let cur = 0; const step = Math.max(1, Math.round(score/40));
+  const t = setInterval(() => {
+    cur += step; if (cur >= score) { cur = score; clearInterval(t); }
+    elScoreNum.textContent = cur;
+  }, 28);
+  elScoreLabel.textContent = bandText(score);
+
+  // target line
+  renderTarget(data);
+
+  // layer totals
+  elLayerATot.textContent = (data.layerATotal||0) + " / 45";
+  elLayerBTot.textContent = (data.hasNoSite ? "0" : (data.layerBTotal||0)) + " / 55";
+
+  // signal lists
+  const aSigs = (data.signals || []).filter(s => s.layer === "A");
+  const bSigs = (data.signals || []).filter(s => s.layer === "B");
+  elLayerASigs.innerHTML = aSigs.map(sigHtml).join("");
+  elLayerBSigs.innerHTML = bSigs.length ? bSigs.map(sigHtml).join("") : "";
+
+  // tips
+  elTips.innerHTML = buildTips(data).map(t => "<li>" + escapeHtml(t) + "</li>").join("");
+
+  // show
+  show(elResult);
+  // CTA banner if low or no_site
+  if (score < 70 || data.hasNoSite) {
+    elCtaLink.href = CONFIG.HOMESITE_URL;
+    show(elCtaBanner);
+  } else {
+    hide(elCtaBanner);
+  }
+  elResult.scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+function renderTarget(data) {
+  const t = STRINGS[LANG];
+  if (data.resolvedUrl) {
+    let html = t.target_analysed + ' <a href="' + escapeAttr(data.resolvedUrl) + '" target="_blank" rel="noopener">' + escapeHtml(data.resolvedUrl) + '</a>';
+    if (typeof data.matches === "number" && data.matches > 1) {
+      html += ' · ' + escapeHtml(t.target_matches(data.matches));
     }
-  });
-  if(!isUrl && !showcase) found["identity_clarity"] = (seed % 3 === 0) ? "partial" : found["identity_clarity"];
-
-  const signals = RUBRIC.map(([id,label,max])=>{
-    const f = found[id];
-    const points = f===true ? max : (f==="partial" ? Math.round(max*0.5) : 0);
-    return { id, label, max, points, found:f, detail: demoDetail(id, f) };
-  });
-  const score = signals.reduce((a,s)=>a+s.points, 0);
-
-  return {
-    score,
-    resolvedUrl: isUrl ? (q.startsWith("http")?payload.query:"https://"+payload.query) : (showcase ? "https://everybodyknowsyou.com" : null),
-    matches: isUrl ? 1 : (showcase ? 1 : 1 + (seed % 4)),
-    note: (!isUrl && !showcase) ? "Estimated from a name search. Paste your exact URL for a precise audit." : "",
-    signals,
-    tips: buildTips(signals)
-  };
+    html += '<span class="notyours">' + escapeHtml(t.target_notyours) + '</span>';
+    elTarget.innerHTML = html;
+  } else if (data.hasNoSite) {
+    elTarget.textContent = "";
+  } else {
+    elTarget.textContent = "";
+  }
 }
-function demoDetail(id, f){
-  const ok = f===true, no = f===false;
-  switch(id){
-    case "llms_txt": return ok ? "Found /llms.txt describing you for AI." : (no ? "No /llms.txt found." : "Found but thin or incomplete.");
-    case "structured_data": return ok ? "Schema.org Person/Organization detected." : (no ? "No JSON-LD structured data." : "Some structured data, missing key fields.");
-    case "identity_clarity": return ok ? "One clear, consistent identity." : (no ? "Multiple conflicting entities for this name." : "Mostly clear, minor ambiguity.");
-    case "meta_seo": return ok ? "Title, description and Open Graph present." : (no ? "Missing key meta tags." : "Some basics present.");
-    case "identity_graph": return ok ? "Linked profiles via sameAs." : (no ? "No linked profiles." : "A few links, could add more.");
-    case "crawlability": return ok ? "robots.txt + sitemap.xml present." : (no ? "No sitemap / blocked crawling." : "Partially crawlable.");
-    case "secure_indexable": return ok ? "HTTPS and indexable." : (no ? "Not secure or noindex set." : "");
-    case "canonical_entity": return ok ? "Canonical URL and name match." : (no ? "No canonical / name mismatch." : "");
+
+function sigHtml(s) {
+  const t = STRINGS[LANG];
+  const cls = s.state === "full" ? "ok" : (s.state === "partial" ? "part" : "no");
+  const glyph = s.state === "full" ? "✓" : (s.state === "partial" ? "~" : "✕");
+  const label = t.sig[s.id] || s.id;
+  const detail = detailFor(s);
+  return '<div class="eky-sig">' +
+    '<div class="eky-ico ' + cls + '">' + glyph + '</div>' +
+    '<div class="eky-sig-body">' +
+      '<div class="eky-sig-name">' + escapeHtml(label) + '</div>' +
+      (detail ? '<div class="eky-sig-detail">' + escapeHtml(detail) + '</div>' : '') +
+    '</div>' +
+    '<div class="eky-sig-pts">' + s.points + '/' + s.max + '</div>' +
+  '</div>';
+}
+
+function detailFor(s) {
+  const d = STRINGS[LANG].detail;
+  const m = s.meta || {};
+  switch (s.id) {
+    case "kg":
+      return s.state === "full" ? d.kg_full : d.kg_none;
+    case "profiles": {
+      const platforms = (m.platforms || []).map(prettyPlatform);
+      if (s.state === "full") return d.profiles_full(m.count || 0, platforms);
+      if (s.state === "partial") return d.profiles_partial(m.count || 0, platforms);
+      return d.profiles_none;
+    }
+    case "clarity":
+      if (s.state === "full") return d.clarity_full;
+      if (s.state === "partial") return d.clarity_partial;
+      return d.clarity_none;
+    case "site":
+      if (m.noSite) return "";
+      if (s.state === "full") return d.site_full;
+      if (s.state === "partial") return d.site_partial;
+      return d.site_none;
+    case "llms":
+      if (m.noSite) return "";
+      if (s.state === "full") return d.llms_full;
+      if (s.state === "partial") return d.llms_partial;
+      return d.llms_none;
+    case "schema":
+      if (m.noSite) return "";
+      if (s.state === "full") return d.schema_full(m.types || []);
+      if (s.state === "partial") return d.schema_partial;
+      return d.schema_none;
+    case "sameas_xref":
+      if (m.noSite) return "";
+      if (s.state === "full") return d.sameas_full(m.matches || 0);
+      if (s.state === "partial") {
+        if ((m.matches || 0) >= 1) return d.sameas_partial_with;
+        return d.sameas_partial_blind;
+      }
+      return d.sameas_none;
+    case "basics":
+      if (m.noSite) return "";
+      if (s.state === "full") return d.basics_full;
+      if (s.state === "partial") return d.basics_partial;
+      return d.basics_none;
   }
   return "";
 }
-function buildTips(signals){
-  const tips = [];
-  const m = {}; signals.forEach(s=> m[s.id]=s);
-  if(m.llms_txt && m.llms_txt.found!==true) tips.push("Add an /llms.txt file: a short plain-text page that tells AI assistants who you are, what you do, and links to your key pages.");
-  if(m.structured_data && m.structured_data.found!==true) tips.push("Add Schema.org JSON-LD (Person or Organization) with your name, description, image and sameAs links so AI can parse your identity.");
-  if(m.identity_graph && m.identity_graph.found!==true) tips.push("List your official profiles (LinkedIn, Wikipedia, social, press) in a sameAs array to build a verifiable identity graph.");
-  if(m.meta_seo && m.meta_seo.found!==true) tips.push("Set a clear page title, meta description and Open Graph tags so previews and AI summaries are accurate.");
-  if(m.crawlability && m.crawlability.found!==true) tips.push("Publish a sitemap.xml and make sure robots.txt allows AI and search crawlers.");
-  if(m.identity_clarity && m.identity_clarity.found!==true) tips.push("Consistently use the same full name and bio everywhere, and link them together so AI doesn't confuse you with someone else.");
-  if(m.secure_indexable && m.secure_indexable.found!==true) tips.push("Serve your site over HTTPS and remove any 'noindex' that hides you from AI and search.");
-  if(m.canonical_entity && m.canonical_entity.found!==true) tips.push("Add a canonical URL and make sure your displayed name matches your structured data.");
-  return tips;
+
+function buildTips(data) {
+  const t = STRINGS[LANG].tips;
+  const out = [];
+  const by = {};
+  (data.signals || []).forEach(s => by[s.id] = s);
+  // priority: things that move the most points
+  if (data.hasNoSite) { out.push(t.site); }
+  if (by.llms && by.llms.state !== "full" && !(by.llms.meta && by.llms.meta.noSite)) out.push(t.llms);
+  if (by.schema && by.schema.state !== "full" && !(by.schema.meta && by.schema.meta.noSite)) out.push(t.schema);
+  if (by.sameas_xref && by.sameas_xref.state !== "full" && !(by.sameas_xref.meta && by.sameas_xref.meta.noSite)) out.push(t.sameas);
+  if (by.basics && by.basics.state !== "full" && !(by.basics.meta && by.basics.meta.noSite)) out.push(t.basics);
+  if (by.profiles && by.profiles.state !== "full") out.push(t.profiles);
+  if (by.clarity && by.clarity.state !== "full") out.push(t.clarity);
+  if (by.kg && by.kg.state !== "full") out.push(t.kg);
+  return out.length ? out : (LANG === "es" ? ["Estás en excelente forma — mantén tu Schema.org y llms.txt al día."] : ["You're in excellent shape — keep your Schema.org and llms.txt up to date."]);
 }
 
-/* ---- helpers ---- */
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
-function escapeAttr(s){ return escapeHtml(s); }
+/* ============================================================
+   helpers
+   ============================================================ */
+const PLATFORM_LABEL = {
+  linkedin:"LinkedIn", wikipedia:"Wikipedia", wikidata:"Wikidata", twitter:"X / Twitter",
+  instagram:"Instagram", facebook:"Facebook", youtube:"YouTube", tiktok:"TikTok",
+  threads:"Threads", github:"GitHub", imdb:"IMDb", crunchbase:"Crunchbase",
+  spotify:"Spotify", medium:"Medium", substack:"Substack", behance:"Behance",
+  dribbble:"Dribbble", patreon:"Patreon", pinterest:"Pinterest", reddit:"Reddit",
+  quora:"Quora", goodreads:"Goodreads", vimeo:"Vimeo", soundcloud:"SoundCloud",
+  aboutme:"About.me", linktree:"Linktree", other:"Other"
+};
+function prettyPlatform(p) { return PLATFORM_LABEL[p] || p; }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+
+/* ============================================================
+   init
+   ============================================================ */
+buildCountries();
+applyLang();
 </script>
 </body>
 </html>
