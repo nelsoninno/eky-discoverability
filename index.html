@@ -414,11 +414,11 @@ input.eky-text:focus, select.eky-select:focus{
 
       <div class="eky-layers">
         <div class="eky-layer">
-          <h3><span data-t="layer_a">Where AI finds you</span><span class="ltot" id="ekyLayerATot">0 / 45</span></h3>
+          <h3><span data-t="layer_a">Where AI finds you</span><span class="ltot" id="ekyLayerATot">0 / 40</span></h3>
           <div id="ekyLayerASigs"></div>
         </div>
         <div class="eky-layer">
-          <h3><span data-t="layer_b">Your own hub</span><span class="ltot" id="ekyLayerBTot">0 / 55</span></h3>
+          <h3><span data-t="layer_b">Your own hub</span><span class="ltot" id="ekyLayerBTot">0 / 60</span></h3>
           <div id="ekyLayerBSigs"></div>
         </div>
       </div>
@@ -512,6 +512,8 @@ const STRINGS = {
     profiles_seen: "AI also sees you on:",
     kg_badge:      "Google Knowledge Panel",
     result_title:  "Here's what AI sees",
+    result_title_url: "Here's how AI-ready your website is",
+    section_website:  "Website quality",
     layer_a:       "Where AI finds you",
     layer_b:       "Your own hub",
     how_to_improve:"How to improve",
@@ -544,6 +546,7 @@ const STRINGS = {
       llms:        "AI guide file (llms.txt)",
       schema:      "Schema.org structured data",
       sameas_xref: "Site links match AI's profiles",
+      sameas:      "Linked profiles (sameAs)",
       basics:      "Page basics, canonical, secure, crawlable"
     },
     detail: {
@@ -568,6 +571,9 @@ const STRINGS = {
       sameas_partial_with: "Only 1 sameAs link matches AI's profiles.",
       sameas_partial_blind: "You declare sameAs links, but we couldn't cross-verify them with AI's search.",
       sameas_none: "No sameAs links cross-verify your identity to AI.",
+      sameas_count_full:    (n) => n + " profiles declared via sameAs on your site.",
+      sameas_count_partial: (n) => "Only " + n + " sameAs profile(s) declared \u2014 add more.",
+      sameas_count_none:    "No sameAs profiles declared on your site.",
       basics_full: "Title, description, OG, canonical, HTTPS, crawlable — all good.",
       basics_partial: "Some basics are in place, some missing.",
       basics_none: "Title, meta, canonical, OG mostly missing."
@@ -602,6 +608,8 @@ const STRINGS = {
     profiles_seen: "La IA también te ve en:",
     kg_badge:      "Panel de Google",
     result_title:  "Esto es lo que la IA ve",
+    result_title_url: "Esto es lo que tu sitio le dice a la IA",
+    section_website:  "Calidad del sitio",
     layer_a:       "Dónde te encuentra la IA",
     layer_b:       "Tu propio sitio",
     how_to_improve:"Cómo mejorar",
@@ -634,6 +642,7 @@ const STRINGS = {
       llms:        "Archivo guía para IA (llms.txt)",
       schema:      "Datos estructurados (Schema.org)",
       sameas_xref: "Los enlaces del sitio coinciden con los perfiles",
+      sameas:      "Perfiles enlazados (sameAs)",
       basics:      "Básicos de página, canónico, seguro, rastreable"
     },
     detail: {
@@ -658,6 +667,9 @@ const STRINGS = {
       sameas_partial_with: "Solo 1 enlace sameAs coincide con los perfiles.",
       sameas_partial_blind: "Declaras sameAs, pero no pudimos cruzar la verificación con la búsqueda.",
       sameas_none: "Ningún sameAs verifica tu identidad ante la IA.",
+      sameas_count_full:    (n) => n + " perfiles declarados vía sameAs en tu sitio.",
+      sameas_count_partial: (n) => "Solo " + n + " perfil(es) sameAs declarados \u2014 agrega más.",
+      sameas_count_none:    "No hay perfiles sameAs declarados en tu sitio.",
       basics_full: "Título, descripción, OG, canónico, HTTPS, rastreable — todo bien.",
       basics_partial: "Algunos básicos sí, otros faltan.",
       basics_none: "Faltan título, meta, canónico, OG."
@@ -979,14 +991,32 @@ function renderResult(data) {
   renderTarget(data);
 
   // layer totals
-  elLayerATot.textContent = (data.layerATotal||0) + " / 45";
-  elLayerBTot.textContent = (data.hasNoSite ? "0" : (data.layerBTotal||0)) + " / 55";
+  elLayerATot.textContent = (data.layerATotal||0) + " / 40";
+  elLayerBTot.textContent = (data.hasNoSite ? "0" : (data.layerBTotal||0)) + " / 60";
 
-  // signal lists
-  const aSigs = (data.signals || []).filter(s => s.layer === "A");
-  const bSigs = (data.signals || []).filter(s => s.layer === "B");
-  elLayerASigs.innerHTML = aSigs.map(sigHtml).join("");
-  elLayerBSigs.innerHTML = bSigs.length ? bSigs.map(sigHtml).join("") : "";
+  // signal lists + mode-aware layout
+  const _T = STRINGS[LANG];
+  const _isUrlAudit = data.mode === "url_audit";
+  const _layerEls = elResult.querySelectorAll(".eky-layer");
+  const _layerLeft = _layerEls[0] || null;
+  const _layerRight = _layerEls[1] || null;
+  const _rightLabel = _layerRight ? _layerRight.querySelector("h3 > span:first-child") : null;
+  const _titleEl = elResult.querySelector("h2");
+  if (_titleEl) _titleEl.textContent = _isUrlAudit ? _T.result_title_url : _T.result_title;
+  if (_isUrlAudit) {
+    if (_layerLeft) _layerLeft.style.display = "none";
+    if (_rightLabel) _rightLabel.textContent = _T.section_website;
+    elLayerBTot.textContent = score + " / 100";
+    elLayerASigs.innerHTML = "";
+    elLayerBSigs.innerHTML = (data.signals || []).map(sigHtml).join("");
+  } else {
+    if (_layerLeft) _layerLeft.style.display = "";
+    if (_rightLabel) _rightLabel.textContent = _T.layer_b;
+    const aSigs = (data.signals || []).filter(s => s.layer === "A");
+    const bSigs = (data.signals || []).filter(s => s.layer === "B");
+    elLayerASigs.innerHTML = aSigs.map(sigHtml).join("");
+    elLayerBSigs.innerHTML = bSigs.length ? bSigs.map(sigHtml).join("") : "";
+  }
 
   // tips
   elTips.innerHTML = buildTips(data).map(t => "<li>" + escapeHtml(t) + "</li>").join("");
@@ -1066,6 +1096,10 @@ function detailFor(s) {
       if (s.state === "full") return d.schema_full(m.types || []);
       if (s.state === "partial") return d.schema_partial;
       return d.schema_none;
+    case "sameas":
+      if (s.state === "full") return d.sameas_count_full(m.count || 0);
+      if (s.state === "partial") return d.sameas_count_partial(m.count || 0);
+      return d.sameas_count_none;
     case "sameas_xref":
       if (m.noSite) return "";
       if (s.state === "full") return d.sameas_full(m.matches || 0);
@@ -1093,6 +1127,7 @@ function buildTips(data) {
   if (by.llms && by.llms.state !== "full" && !(by.llms.meta && by.llms.meta.noSite)) out.push(t.llms);
   if (by.schema && by.schema.state !== "full" && !(by.schema.meta && by.schema.meta.noSite)) out.push(t.schema);
   if (by.sameas_xref && by.sameas_xref.state !== "full" && !(by.sameas_xref.meta && by.sameas_xref.meta.noSite)) out.push(t.sameas);
+  if (by.sameas && by.sameas.state !== "full") out.push(t.sameas);
   if (by.basics && by.basics.state !== "full" && !(by.basics.meta && by.basics.meta.noSite)) out.push(t.basics);
   if (by.profiles && by.profiles.state !== "full") out.push(t.profiles);
   if (by.clarity && by.clarity.state !== "full") out.push(t.clarity);
