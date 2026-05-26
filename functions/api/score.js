@@ -335,60 +335,72 @@ function layerAToSignals(la) {
      B5 pageBasicsCanonicalHttpsCrawl   10  (title/desc/OG + canonical + https + robots/sitemap)
    ===================================================================== */
 function computeLayerB({ home, llms, llmsFull, robots, sitemap, html, sd, target, profiles }) {
-  // B1
-  const b1state = home.ok ? "full" : (home.status > 0 ? "partial" : "none");
-  const b1pts = b1state === "full" ? 15 : (b1state === "partial" ? 8 : 0);
-
-  // B2
-  const llmsBody = (llms.ok && llms.text.trim()) || (llmsFull.ok && llmsFull.text.trim()) || "";
-  const b2state = llmsBody.length > 200 ? "full" : (llmsBody.length > 0 ? "partial" : "none");
-  const b2pts = b2state === "full" ? 10 : (b2state === "partial" ? 5 : 0);
-
-  // B3
-  const richEntity = sd.hasEntity && sd.name && (sd.hasDescription || sd.hasImage);
-  const b3state = richEntity ? "full" : (sd.hasEntity ? "partial" : "none");
-  const b3pts = b3state === "full" ? 10 : (b3state === "partial" ? 5 : 0);
-
-  // B4 — cross verification
-  const profileHosts = new Set((profiles || []).map(p => hostOf(p.url)).filter(Boolean));
-  const sameAsHosts = new Set((sd.sameAs || []).map(hostOf).filter(Boolean));
-  let crossMatches = 0;
-  for (const h of sameAsHosts) if (profileHosts.has(h)) crossMatches++;
-  let b4state = "none", b4pts = 0;
-  if (crossMatches >= 2) { b4state = "full"; b4pts = 10; }
-  else if (crossMatches === 1) { b4state = "partial"; b4pts = 5; }
-  else if (sameAsHosts.size >= 1 && profileHosts.size === 0) { b4state = "partial"; b4pts = 5; }
-
-  // B5
-  const lower = html.toLowerCase();
-  const hasTitle = /<title[^>]*>s*S+/i.test(html);
-  const hasDesc  = /<meta[^>]+name=["']description["'][^>]+content=["'][^"']{20,}/i.test(html);
-  const hasOg    = /<meta[^>]+property=["']og:(title|description|image)["']/i.test(html);
-  const hasCanon = /<link[^>]+rel=["']canonical["'][^>]+href=/i.test(html);
-  const isHttps  = (target.startsWith("https://")) || ((home.finalUrl || "").startsWith("https://"));
-  const noindex  = /<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*noindex/i.test(html);
-  const robotsOk = robots.ok && !/disallow:s*/s*$/im.test(robots.text);
-  const sitemapOk = sitemap.ok && /<urlset|<sitemapindex/i.test(sitemap.text);
-
-  let b5pts = 0;
-  if (hasTitle) b5pts += 2;
-  if (hasDesc)  b5pts += 2;
-  if (hasOg)    b5pts += 2;
-  if (hasCanon) b5pts += 2;
-  if (isHttps && !noindex) b5pts += 1;
-  if (robotsOk || sitemapOk) b5pts += 1;
-  let b5state = "none";
-  if (b5pts >= 8) b5state = "full";
-  else if (b5pts >= 4) b5state = "partial";
-
-  const bySignal = {
-    ownedSite:         { state: b1state, points: b1pts, max: 15, meta: { status: home.status } },
-    llmsTxt:           { state: b2state, points: b2pts, max: 10, meta: { length: llmsBody.length, file: llms.ok ? "llms.txt" : (llmsFull.ok ? "llms-full.txt" : null) } },
-    structuredData:    { state: b3state, points: b3pts, max: 10, meta: { types: sd.types, name: sd.name || "" } },
-    sameAsCrossVerify: { state: b4state, points: b4pts, max: 10, meta: { matches: crossMatches, siteSameAs: [...sameAsHosts], profileHosts: [...profileHosts] } },
-    pageBasics:        { state: b5state, points: b5pts, max: 10, meta: { hasTitle, hasDesc, hasOg, hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
-  };
-  return { bySignal, total: b1pts + b2pts + b3pts + b4pts + b5pts };
+  let __phase = "start";
+  try {
+    __phase = "B1";
+    const b1state = home.ok ? "full" : (home.status > 0 ? "partial" : "none");
+    const b1pts = b1state === "full" ? 15 : (b1state === "partial" ? 8 : 0);
+    __phase = "B2";
+    const llmsBody = (llms.ok && llms.text.trim()) || (llmsFull.ok && llmsFull.text.trim()) || "";
+    const b2state = llmsBody.length > 200 ? "full" : (llmsBody.length > 0 ? "partial" : "none");
+    const b2pts = b2state === "full" ? 10 : (b2state === "partial" ? 5 : 0);
+    __phase = "B3";
+    const richEntity = sd.hasEntity && sd.name && (sd.hasDescription || sd.hasImage);
+    const b3state = richEntity ? "full" : (sd.hasEntity ? "partial" : "none");
+    const b3pts = b3state === "full" ? 10 : (b3state === "partial" ? 5 : 0);
+    __phase = "B4_profileHosts";
+    const profileHosts = new Set((profiles || []).map(p => hostOf(p.url)).filter(Boolean));
+    __phase = "B4_sameAsHosts";
+    const sameAsHosts = new Set((sd.sameAs || []).map(hostOf).filter(Boolean));
+    __phase = "B4_loop";
+    let crossMatches = 0;
+    for (const h of sameAsHosts) if (profileHosts.has(h)) crossMatches++;
+    let b4state = "none", b4pts = 0;
+    if (crossMatches >= 2) { b4state = "full"; b4pts = 10; }
+    else if (crossMatches === 1) { b4state = "partial"; b4pts = 5; }
+    else if (sameAsHosts.size >= 1 && profileHosts.size === 0) { b4state = "partial"; b4pts = 5; }
+    __phase = "B5_lower";
+    const lower = html.toLowerCase();
+    __phase = "B5_title";
+    const hasTitle = /<title[^>]*>\s*\S+/i.test(html);
+    __phase = "B5_desc";
+    const hasDesc  = /<meta[^>]+name=["\u0027]description["\u0027][^>]+content=["\u0027][^"\u0027]{20,}/i.test(html);
+    __phase = "B5_og";
+    const hasOg    = /<meta[^>]+property=["\u0027]og:(title|description|image)["\u0027]/i.test(html);
+    __phase = "B5_canon";
+    const hasCanon = /<link[^>]+rel=["\u0027]canonical["\u0027][^>]+href=/i.test(html);
+    __phase = "B5_https";
+    const isHttps  = (target.startsWith("https://")) || ((home.finalUrl || "").startsWith("https://"));
+    __phase = "B5_noindex";
+    const noindex  = /<meta[^>]+name=["\u0027]robots["\u0027][^>]+content=["\u0027][^"\u0027]*noindex/i.test(html);
+    __phase = "B5_robots";
+    const robotsLines = ((robots && robots.text) || "").toLowerCase().split("\n").map(s => s.replace(/[\t ]/g, ""));
+    const robotsOk = robots.ok && !robotsLines.includes("disallow:/");
+    __phase = "B5_sitemap";
+    const sitemapOk = sitemap.ok && /<urlset|<sitemapindex/i.test(sitemap.text);
+    __phase = "B5_score";
+    let b5pts = 0;
+    if (hasTitle) b5pts += 2;
+    if (hasDesc)  b5pts += 2;
+    if (hasOg)    b5pts += 2;
+    if (hasCanon) b5pts += 2;
+    if (isHttps && !noindex) b5pts += 1;
+    if (robotsOk || sitemapOk) b5pts += 1;
+    let b5state = "none";
+    if (b5pts >= 8) b5state = "full";
+    else if (b5pts >= 4) b5state = "partial";
+    __phase = "build_bySignal";
+    const bySignal = {
+      ownedSite:         { state: b1state, points: b1pts, max: 15, meta: { status: home.status } },
+      llmsTxt:           { state: b2state, points: b2pts, max: 10, meta: { length: llmsBody.length, file: llms.ok ? "llms.txt" : (llmsFull.ok ? "llms-full.txt" : null) } },
+      structuredData:    { state: b3state, points: b3pts, max: 10, meta: { types: sd.types, name: sd.name || "" } },
+      sameAsCrossVerify: { state: b4state, points: b4pts, max: 10, meta: { matches: crossMatches, siteSameAs: [...sameAsHosts], profileHosts: [...profileHosts] } },
+      pageBasics:        { state: b5state, points: b5pts, max: 10, meta: { hasTitle: hasTitle, hasDesc: hasDesc, hasOg: hasOg, hasCanon: hasCanon, isHttps: isHttps && !noindex, crawlable: robotsOk || sitemapOk } }
+    };
+    return { bySignal, total: b1pts + b2pts + b3pts + b4pts + b5pts };
+  } catch (e) {
+    throw new Error("computeLayerB_FAIL@" + __phase + ": " + (e && e.message));
+  }
 }
 
 function layerBToSignals(lb) {
