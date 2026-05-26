@@ -385,12 +385,30 @@ function pickCandidate(data, name) {
   return { url: normalizeUrl(r.link), title: r.title || hostOf(r.link), snippet: r.snippet || "", source: "organic" };
 }
 function estimateMatches(data, name) {
+  // Count DISTINCT identity slugs on known profile platforms (e.g. linkedin.com/in/X).
+  // If multiple different slugs appear on the SAME platform, that means multiple
+  // different people share this name. One Nelson Inno = one slug = one person.
   const organic = Array.isArray(data.organic) ? data.organic : [];
   if (!organic.length) return 1;
-  const nm = (name || "").toLowerCase();
-  const titleHits = organic.filter(o => ((o.title || "") + " " + (o.snippet || "")).toLowerCase().includes(nm)).length;
-  const distinctHosts = new Set(organic.map(o => hostOf(o.link)).filter(Boolean));
-  return Math.max(1, Math.min(distinctHosts.size, Math.round(titleHits / 1.5)) || 1);
+  const SLUG_HOSTS = ["linkedin.com","wikipedia.org","instagram.com","twitter.com","x.com","github.com","facebook.com"];
+  const byPlatform = {};
+  for (const r of organic) {
+    if (!r.link) continue;
+    try {
+      const u = new URL(r.link);
+      const host = u.hostname.replace(/^www\./, "").replace(/^[a-z]{2}\./, "");
+      const hit = SLUG_HOSTS.find(h => host === h || host.endsWith("." + h));
+      if (!hit) continue;
+      const segs = u.pathname.split("/").filter(Boolean);
+      if (!segs.length) continue;
+      const slug = segs[segs.length - 1].toLowerCase();
+      if (!byPlatform[hit]) byPlatform[hit] = new Set();
+      byPlatform[hit].add(slug);
+    } catch (e) {}
+  }
+  let maxCandidates = 1;
+  for (const k in byPlatform) if (byPlatform[k].size > maxCandidates) maxCandidates = byPlatform[k].size;
+  return maxCandidates;
 }
 function classifyHost(url) {
   const h = hostOf(url);
