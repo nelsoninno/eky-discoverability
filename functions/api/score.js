@@ -72,8 +72,7 @@ export async function onRequestPost(context) {
     const result = await handle(body, context.env || {});
     return new Response(JSON.stringify(result), { status: 200, headers });
   } catch (err) {
-    try { console.error("score.js error:", err && (err.stack || err.message || err)); } catch (_) {}
-    return new Response(JSON.stringify({ error: "Something went wrong. Please try again." }), { status: 200, headers });
+    return new Response(JSON.stringify({ error: "Something went wrong. Please try again.", _debug: { msg: String((err && err.message) || err), stack: String((err && err.stack) || "").split("\n").slice(0,8).join(" | ") } }), { status: 200, headers });
   }
 }
 
@@ -147,7 +146,7 @@ async function modeDiscover({ query, country, countryName }, env) {
   }
 
   const profiles = extractProfiles(search.data, query);
-  const candidate = pickCandidate(search.data, query);
+  const candidate = pickCandidate(search.data);
   const matches = estimateMatches(search.data, query);
   const hasKnowledgeGraph = !!(search.data.knowledgeGraph && (search.data.knowledgeGraph.title || search.data.knowledgeGraph.description));
 
@@ -159,8 +158,7 @@ async function modeDiscover({ query, country, countryName }, env) {
     profiles,                  // [{platform,url,title}]
     matches,
     layerA: layerA.bySignal,
-    layerATotal: layerA.total,
-    _topHosts: (Array.isArray(search.data.organic) ? search.data.organic : []).slice(0, 10).map(o => ({ host: hostOf(o.link), title: o.title || "", thirdParty: isThirdParty(o.link) }))
+    layerATotal: layerA.total
   };
 }
 
@@ -464,8 +462,8 @@ function extractProfiles(data, name) {
   return profiles;
 }
 
-function pickCandidate(data, name) {
-  // 1) Knowledge Graph official website wins if present and not a 3rd party.
+function pickCandidate(data) {
+  // 1) Serper knowledgeGraph.website is the strongest signal
   if (data.knowledgeGraph && data.knowledgeGraph.website) {
     const u = normalizeUrl(data.knowledgeGraph.website);
     if (u && !isThirdParty(u)) {
@@ -477,39 +475,20 @@ function pickCandidate(data, name) {
       };
     }
   }
+  // 2) First organic that is NOT a platform / NOT news/PR
   const organic = Array.isArray(data.organic) ? data.organic : [];
-  const candidates = organic.filter(r => r.link && !isThirdParty(r.link));
-  if (!candidates.length) return null;
-
-  // 2) Prefer a non-platform result whose domain MATCHES the query name
-  //    (e.g. "Nelson Inno" -> nelsoninno.com). This catches the very common
-  //    case where someone owns name-matching-domain.com.
-  const slug = (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (slug.length >= 3) {
-    for (const r of candidates) {
-      const host = hostOf(r.link);
-      // Strip TLD-ish suffix: "nelsoninno.com" -> "nelsoninno"; "sub.example.co.uk" -> "subexample"
-      const parts = host.split(".");
-      const rootName = parts.slice(0, Math.max(1, parts.length - 1)).join("");
-      if (rootName === slug || rootName.indexOf(slug) !== -1 || slug.indexOf(rootName) !== -1) {
-        return {
-          url: normalizeUrl(r.link),
-          title: r.title || host,
-          snippet: r.snippet || "",
-          source: "nameMatch"
-        };
-      }
+  for (const r of organic) {
+    if (!r.link) continue;
+    if (!isThirdParty(r.link)) {
+      return {
+        url: normalizeUrl(r.link),
+        title: r.title || hostOf(r.link),
+        snippet: r.snippet || "",
+        source: "organic"
+      };
     }
   }
-
-  // 3) Fallback: the first remaining non-platform result.
-  const r = candidates[0];
-  return {
-    url: normalizeUrl(r.link),
-    title: r.title || hostOf(r.link),
-    snippet: r.snippet || "",
-    source: "organic"
-  };
+  return null;
 }
 
 function estimateMatches(data, name) {
